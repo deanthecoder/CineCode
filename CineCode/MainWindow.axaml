@@ -1,0 +1,33 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:wv="clr-namespace:AvaloniaWebView;assembly=WebView.Avalonia"
+        mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="800"
+        x:Class="CineCode.MainWindow"
+        Title="CineCode - Code While You Watch"
+        Width="1200" Height="800">
+    
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+        
+        <!-- Toolbar -->
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="10" Spacing="10">
+            <Button Name="OpenFileButton" Content="Open File" Click="OpenFile_Click"/>
+            <Button Name="SaveFileButton" Content="Save File" Click="SaveFile_Click"/>
+            <Slider Name="OpacitySlider" 
+                    Width="150" 
+                    Minimum="0.1" 
+                    Maximum="1.0" 
+                    Value="0.85"
+                    VerticalAlignment="Center"/>
+            <TextBlock Text="Editor Opacity" VerticalAlignment="Center"/>
+        </StackPanel>
+        
+        <!-- WebView -->
+        <WebView Grid.Row="1" Name="WebViewControl"/>
+    </Grid>
+</Window>
