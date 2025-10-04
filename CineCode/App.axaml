@@ -1,10 +1,21 @@
 <Application xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             xmlns:local="clr-namespace:CineCode"
              x:Class="CineCode.App"
+             x:DataType="local:App"
+             Name="CineCode"
              RequestedThemeVariant="Default">
              <!-- "Default" ThemeVariant follows system theme variant. "Dark" or "Light" are other available options. -->
 
     <Application.Styles>
         <FluentTheme />
+        <materialIcons:MaterialIconStyles />
     </Application.Styles>
+
+    <NativeMenu.Menu>
+        <NativeMenu>
+            <NativeMenuItem Header="About CineCode" Command="{CompiledBinding AboutCommand}" />
+        </NativeMenu>
+    </NativeMenu.Menu>
 </Application>

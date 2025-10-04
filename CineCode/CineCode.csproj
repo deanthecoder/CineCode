@@ -1,4 +1,5 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
+
     <PropertyGroup>
         <OutputType>WinExe</OutputType>
         <TargetFramework>net8.0</TargetFramework>
@@ -6,6 +7,9 @@
         <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
         <ApplicationManifest>app.manifest</ApplicationManifest>
         <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+        <Company>Dean Edis (DeanTheCoder)</Company>
+        <ApplicationTitle>CineCode</ApplicationTitle>
+        <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     </PropertyGroup>
 
     <ItemGroup>
@@ -18,6 +22,7 @@
             <IncludeAssets Condition="'$(Configuration)' != 'Debug'">None</IncludeAssets>
             <PrivateAssets Condition="'$(Configuration)' != 'Debug'">All</PrivateAssets>
         </PackageReference>
+        <PackageReference Include="Material.Icons.Avalonia" Version="2.4.1" />
         <PackageReference Include="WebView.Avalonia" Version="11.0.0.1" />
         <PackageReference Include="WebView.Avalonia.Desktop" Version="11.0.0.1" />
     </ItemGroup>
@@ -26,4 +31,15 @@
         <AvaloniaResource Include="Assets\**" />
         <EmbeddedResource Include="Assets\editor.html" />
     </ItemGroup>
+  <ItemGroup>
+    <Compile Update="Views/*.axaml.cs">
+      <DependentUpon>%(Filename)</DependentUpon>
+    </Compile>
+  </ItemGroup>
+  <ItemGroup>
+    <None Update="Views/*.axaml">
+      <Generator>Avalonia.Markup.Xaml.XamlXTask</Generator>
+      <GeneratorSecurityMode>FullTrust</GeneratorSecurityMode>
+    </None>
+  </ItemGroup>
 </Project>

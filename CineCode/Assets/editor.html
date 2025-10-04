@@ -8,6 +8,7 @@
     <!-- CodeMirror CSS -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/monokai.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/dialog/dialog.min.css">
     
     <style>
         * {
@@ -92,18 +93,10 @@
     <div id="container">
         <!-- YouTube Player -->
         <div id="youtube-container">
-            <iframe id="youtube-player"
-                    src="https://www.youtube.com/embed/eYhP50P31h4?enablejsapi=1&autoplay=1&mute=1&playsinline=1"
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                    allowfullscreen>
-            </iframe>
+            <div id="youtube-player"></div>
         </div>
 
-        <div id="video-controls">
-            <button id="play-toggle" type="button" aria-pressed="false" title="Pause video">Pause</button>
-        </div>
-        
-        <!-- Code Editor -->
+                <!-- Code Editor -->
         <div id="editor-container">
             <textarea id="code-editor"></textarea>
         </div>
@@ -117,20 +110,27 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/xml/xml.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/css/css.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/htmlmixed/htmlmixed.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/search/searchcursor.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/search/search.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/dialog/dialog.min.js"></script>
     
     <!-- YouTube IFrame API -->
     <script src="https://www.youtube.com/iframe_api"></script>
     
     <script>
+        const DEFAULT_VIDEO_ID = 'eYhP50P31h4';
+        const DIM_MULTIPLIER = 0.5;
+        const IDLE_DELAY_MS = 8000;
+
         let editor;
         let player;
         let isPaused = false;
         let baseOpacity = 0.85;
         let isDimmed = false;
         let idleTimer = null;
-
-        const DIM_MULTIPLIER = 0.5;
-        const IDLE_DELAY_MS = 8000;
+        let currentVideoId = DEFAULT_VIDEO_ID;
+        let pendingVideoRequest = null;
+        let currentVolume = 0.5;
 
         function ensureDispatchBridge() {
             if (typeof window.__dispatchMessageCallback === 'function' && Array.isArray(window.__receiveMessageCallbacks)) {
@@ -246,45 +246,152 @@
                     setPlaybackState(Boolean(payload.paused));
                     break;
                 }
+                case 'load-video': {
+                    const incomingId = typeof payload.videoId === 'string' ? payload.videoId.trim() : '';
+                    if (incomingId) {
+                        queueVideoLoad(incomingId, payload.autoplay !== false);
+                        handleEditorActivity();
+                    }
+                    break;
+                }
+                case 'set-volume': {
+                    const volumeValue = Number(payload.value);
+                    if (!Number.isFinite(volumeValue)) {
+                        break;
+                    }
+                    currentVolume = Math.min(Math.max(volumeValue, 0), 1);
+                    applyVolume();
+                    break;
+                }
+                case 'seek-video': {
+                    const offset = Number(payload.offset);
+                    if (player && Number.isFinite(offset) && typeof player.getCurrentTime === 'function' && typeof player.seekTo === 'function') {
+                        const current = player.getCurrentTime();
+                        const target = Math.max(0, current + offset);
+                        player.seekTo(target, true);
+                    }
+                    break;
+                }
+                case 'paste-content': {
+                    const content = typeof payload.content === 'string' ? payload.content : '';
+                    if (content.length > 0) {
+                        editor.replaceSelection(content, 'end');
+                        handleEditorActivity();
+                    }
+                    break;
+                }
                 default:
                     break;
             }
+        }
+
+        function queueVideoLoad(videoId, autoplay = true) {
+            currentVideoId = videoId;
+            pendingVideoRequest = {
+                videoId,
+                autoplay
+            };
+
+            if (player && typeof player.loadVideoById === 'function') {
+                executePendingVideoRequest();
+            }
+
+            isPaused = !autoplay;
+            notifyPlaybackChange();
+        }
+
+        function executePendingVideoRequest() {
+            if (!pendingVideoRequest || !player || typeof player.loadVideoById !== 'function') {
+                return;
+            }
+
+            const request = pendingVideoRequest;
+            pendingVideoRequest = null;
+
+            player.loadVideoById({
+                videoId: request.videoId,
+                startSeconds: 0
+            });
+
+            if (request.autoplay) {
+                player.playVideo?.();
+                isPaused = false;
+            } else {
+                player.pauseVideo?.();
+                isPaused = true;
+            }
+
+            applyVolume();
+            notifyPlaybackChange();
         }
 
         function notifyPlaybackChange() {
             hostBridge.notify({ type: 'playback-changed', state: isPaused ? 'paused' : 'playing' });
         }
 
-        function updatePlayToggleButton() {
-            const button = document.getElementById('play-toggle');
-            if (!button) return;
-            button.textContent = isPaused ? 'Play' : 'Pause';
-            button.setAttribute('aria-pressed', String(!isPaused));
-            button.title = isPaused ? 'Play video' : 'Pause video';
-        }
-
         function setPlaybackState(shouldPause) {
-            if (isPaused === shouldPause) {
-                updatePlayToggleButton();
-                return;
-            }
-
-            isPaused = shouldPause;
+            const pause = Boolean(shouldPause);
 
             if (player) {
-                if (shouldPause && typeof player.pauseVideo === 'function') {
+                if (pause && typeof player.pauseVideo === 'function') {
                     player.pauseVideo();
-                } else if (!shouldPause && typeof player.playVideo === 'function') {
+                }
+                if (!pause && typeof player.playVideo === 'function') {
                     player.playVideo();
                 }
             }
 
-            updatePlayToggleButton();
+            isPaused = pause;
+            applyVolume();
             notifyPlaybackChange();
+        }
+
+        async function copySelectionAsync() {
+            const selection = editor.getSelection();
+            if (!selection) {
+                return;
+            }
+
+            try {
+                await navigator.clipboard.writeText(selection);
+            } catch (error) {
+                try {
+                    document.execCommand('copy');
+                } catch (fallbackError) {
+                    console.error('Copy failed', fallbackError);
+                }
+            }
+        }
+
+        async function cutSelectionAsync() {
+            const selection = editor.getSelection();
+            if (!selection) {
+                return;
+            }
+
+            await copySelectionAsync();
+            editor.replaceSelection('', 'start');
+            handleEditorActivity();
+        }
+
+        async function pasteFromClipboardAsync() {
+            try {
+                const text = await navigator.clipboard.readText();
+                if (typeof text === 'string' && text.length > 0) {
+                    editor.replaceSelection(text, 'end');
+                    handleEditorActivity();
+                    return true;
+                }
+            } catch (error) {
+                console.error('navigator.clipboard paste failed', error);
+            }
+
+            return false;
         }
 
         function togglePlayback() {
             setPlaybackState(!isPaused);
+            handleEditorActivity();
         }
 
         editor = CodeMirror.fromTextArea(document.getElementById('code-editor'), {
@@ -295,15 +402,121 @@
             indentUnit: 4,
             tabSize: 4,
             indentWithTabs: false,
+            extraKeys: {
+                Tab: cm => cm.replaceSelection('    ', 'end'),
+                'Shift-Tab': cm => cm.indentSelection('subtract'),
+                'Ctrl-F': cm => cm.execCommand('find'),
+                'Cmd-F': cm => cm.execCommand('find'),
+                'Ctrl-G': cm => cm.execCommand('findNext'),
+                'Cmd-G': cm => cm.execCommand('findNext'),
+                'Shift-Ctrl-G': cm => cm.execCommand('findPrev'),
+                'Shift-Cmd-G': cm => cm.execCommand('findPrev'),
+                'Ctrl-H': cm => cm.execCommand('replace'),
+                'Cmd-H': cm => cm.execCommand('replace'),
+                'Shift-Ctrl-H': cm => cm.execCommand('replaceAll'),
+                'Shift-Cmd-H': cm => cm.execCommand('replaceAll')
+            },
             autofocus: true
         });
 
-        editor.setValue('// Start coding here...\n// Use the overlay button to pause or play the video.\n');
+        editor.setValue('// Start coding here...');
 
         hostBridge.subscribe(handleHostMessage);
         hostBridge.notify({ type: 'editor-ready' });
         applyCurrentOpacity();
-        updatePlayToggleButton();
+        handleEditorActivity();
+
+        window.onYouTubeIframeAPIReady = function() {
+            player = new YT.Player('youtube-player', {
+                width: '100%',
+                height: '100%',
+                videoId: currentVideoId,
+                playerVars: {
+                    autoplay: 1,
+                    mute: 0,
+                    playsinline: 1,
+                    rel: 0,
+                    controls: 1
+                },
+                events: {
+                    onReady: onPlayerReady
+                }
+            });
+        };
+
+        function onPlayerReady() {
+            player.addEventListener('onError', event => {
+                hostBridge.notify({ type: 'player-error', code: event.data });
+            });
+
+            applyVolume();
+
+            executePendingVideoRequest();
+
+            if (!pendingVideoRequest) {
+                if (!isPaused && typeof player.playVideo === 'function') {
+                    player.playVideo();
+                } else if (isPaused && typeof player.pauseVideo === 'function') {
+                    player.pauseVideo();
+                }
+            }
+
+            notifyPlaybackChange();
+        }
+
+        editor.on('change', handleEditorActivity);
+        editor.on('keydown', handleEditorActivity);
+        editor.on('mousedown', handleEditorActivity);
+        editor.on('focus', handleEditorActivity);
+
+        document.addEventListener('keydown', async event => {
+            const key = event.key;
+            const meta = event.metaKey;
+            const ctrl = event.ctrlKey;
+            const alt = event.altKey;
+            const lowerKey = key.toLowerCase();
+            const editorHasFocus = editor.hasFocus();
+
+            if ((meta || ctrl) && editorHasFocus) {
+                if (lowerKey === 'c') {
+                    event.preventDefault();
+                    await copySelectionAsync();
+                    return;
+                }
+
+                if (lowerKey === 'x') {
+                    event.preventDefault();
+                    await cutSelectionAsync();
+                    return;
+                }
+
+                if (lowerKey === 'v') {
+                    event.preventDefault();
+                    const handled = await pasteFromClipboardAsync();
+                    if (!handled) {
+                        hostBridge.notify({ type: 'request-paste' });
+                    }
+                    return;
+                }
+            }
+
+            if ((meta || ctrl) && (lowerKey === 'q')) {
+                event.preventDefault();
+                hostBridge.notify({ type: 'request-quit' });
+                return;
+            }
+
+            if ((meta || ctrl) && (lowerKey === 'o')) {
+                event.preventDefault();
+                hostBridge.notify({ type: 'request-open' });
+                return;
+            }
+
+            if (alt && key === 'F4') {
+                event.preventDefault();
+                hostBridge.notify({ type: 'request-quit' });
+            }
+        });
 
         function applyCurrentOpacity() {
             const effectiveOpacity = isDimmed ? Math.max(0, Math.min(baseOpacity * DIM_MULTIPLIER, 1)) : baseOpacity;
@@ -331,53 +544,6 @@
         }
 
         resetIdleTimer();
-
-        window.onYouTubeIframeAPIReady = function() {
-            player = new YT.Player('youtube-player', {
-                events: {
-                    onReady: () => {
-                        if (!isPaused && player && typeof player.playVideo === 'function') {
-                            player.playVideo();
-                        }
-                        updatePlayToggleButton();
-                    }
-                }
-            });
-        };
-
-        const playToggleButton = document.getElementById('play-toggle');
-        if (playToggleButton) {
-            playToggleButton.addEventListener('click', togglePlayback);
-        }
-
-        editor.on('change', handleEditorActivity);
-        editor.on('keydown', handleEditorActivity);
-        editor.on('mousedown', handleEditorActivity);
-        editor.on('focus', handleEditorActivity);
-
-        document.addEventListener('keydown', event => {
-            const key = event.key;
-            const meta = event.metaKey;
-            const ctrl = event.ctrlKey;
-            const alt = event.altKey;
-
-            if ((meta || ctrl) && (key === 'q' || key === 'Q')) {
-                event.preventDefault();
-                hostBridge.notify({ type: 'request-quit' });
-                return;
-            }
-
-            if ((meta || ctrl) && (key === 'o' || key === 'O')) {
-                event.preventDefault();
-                hostBridge.notify({ type: 'request-open' });
-                return;
-            }
-
-            if (alt && key === 'F4') {
-                event.preventDefault();
-                hostBridge.notify({ type: 'request-quit' });
-            }
-        });
 
         function loadCode(content, extension) {
             editor.setValue(content);
@@ -414,6 +580,25 @@
             }
             if (gutters) {
                 gutters.style.setProperty('background', `rgba(39, 40, 34, ${Math.min(opacity + 0.05, 1.0)})`, 'important');
+            }
+        }
+
+        function applyVolume() {
+            currentVolume = Math.min(Math.max(currentVolume, 0), 1);
+
+            if (!player || typeof player.setVolume !== 'function') {
+                return;
+            }
+
+            const volumeLevel = Math.round(currentVolume * 100);
+            player.setVolume(volumeLevel);
+
+            if (volumeLevel <= 0) {
+                if (typeof player.mute === 'function') {
+                    player.mute();
+                }
+            } else if (typeof player.unMute === 'function') {
+                player.unMute();
             }
         }
     </script>

@@ -1,0 +1,13 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:views="clr-namespace:CineCode.Views"
+        mc:Ignorable="d" d:DesignWidth="400" d:DesignHeight="300"
+        x:Class="CineCode.Views.AboutDialog"
+        Title="About CineCode"
+        CanResize="False"
+        MaxWidth="360"
+        MaxHeight="260">
+    <views:AboutDialogContent />
+</Window>
