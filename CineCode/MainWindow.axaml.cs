@@ -39,10 +39,17 @@ public partial class MainWindow : Window
     private double? m_pendingVolume;
     private bool m_suppressVolumeChange;
     private readonly Dictionary<string, Func<string, Task>> m_commandHandlers;
+    private readonly List<string> m_commandNames;
+    private readonly Dictionary<string, IReadOnlyList<string>> m_commandArgumentOptions;
+    private bool m_suppressCommandSuggestionUpdate;
     
     public MainWindow()
     {
         m_commandHandlers = CreateCommandHandlers();
+        m_commandNames = m_commandHandlers.Keys
+            .OrderBy(key => key, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        m_commandArgumentOptions = CreateCommandArgumentOptions();
         InitializeComponent();
         InitializeWebView();
         SetupEventHandlers();
@@ -73,17 +80,60 @@ public partial class MainWindow : Window
         SetLoadVideoButtonTooltip(DefaultLoadVideoTooltip);
     }
 
+    private List<string> GetSuggestionMatches(CommandSuggestionContext context)
+    {
+        if (!context.IsArgument)
+        {
+            var query = context.Query;
+            var matches = m_commandNames
+                .Where(name => name.StartsWith(query, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            if (matches.Count == 0 && context.IsExplicit && string.IsNullOrEmpty(query))
+            {
+                matches = m_commandNames.ToList();
+            }
+
+            return matches;
+        }
+
+        if (!m_commandArgumentOptions.TryGetValue(context.CommandName, out var options))
+        {
+            return new List<string>();
+        }
+
+        var argumentMatches = options
+            .Where(option => option.StartsWith(context.Query, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        if (argumentMatches.Count == 0 && string.IsNullOrEmpty(context.Query))
+        {
+            argumentMatches = options.ToList();
+        }
+
+        return argumentMatches;
+    }
+
     private Dictionary<string, Func<string, Task>> CreateCommandHandlers()
     {
         return new Dictionary<string, Func<string, Task>>(StringComparer.OrdinalIgnoreCase)
         {
             ["open"] = HandleOpenCommandAsync,
+            ["open recent"] = _ => HandleOpenCommandAsync("recent"),
             ["save"] = _ => SaveFileAsync(),
             ["exit"] = _ =>
             {
                 RequestApplicationQuit();
                 return Task.CompletedTask;
             }
+        };
+    }
+
+    private static Dictionary<string, IReadOnlyList<string>> CreateCommandArgumentOptions()
+    {
+        return new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["open"] = new List<string> { "recent" }
         };
     }
 
@@ -488,9 +538,47 @@ public partial class MainWindow : Window
 
     private async void YouTubeIdTextBox_KeyDown(object? sender, KeyEventArgs e)
     {
+        if (CommandSuggestionsPopup?.IsOpen == true && CommandSuggestionsListBox is { } suggestionList)
+        {
+            var normalizedKey = e.Key == Key.Return ? Key.Enter : e.Key;
+
+            switch (normalizedKey)
+            {
+                case Key.Down:
+                    e.Handled = true;
+                    MoveCommandSuggestionSelection(1);
+                    return;
+                case Key.Up:
+                    e.Handled = true;
+                    MoveCommandSuggestionSelection(-1);
+                    return;
+                case Key.Tab:
+                    if (suggestionList.SelectedItem is string tabSelection)
+                    {
+                        e.Handled = true;
+                        AcceptCommandSuggestion(tabSelection);
+                    }
+                    return;
+                case Key.Enter:
+                    if (suggestionList.SelectedItem is string enterSelection
+                        && !IsCurrentCommandSelectionComplete(enterSelection))
+                    {
+                        e.Handled = true;
+                        AcceptCommandSuggestion(enterSelection);
+                        return;
+                    }
+                    break;
+                case Key.Escape:
+                    e.Handled = true;
+                    CloseCommandSuggestions();
+                    return;
+            }
+        }
+
         if (e.Key == Key.Enter || e.Key == Key.Return)
         {
             e.Handled = true;
+            CloseCommandSuggestions();
             var input = YouTubeIdTextBox.Text ?? string.Empty;
 
             var commandResult = await TryExecuteCommandAsync(input);
@@ -510,20 +598,45 @@ public partial class MainWindow : Window
         }
     }
 
-    private bool TryLoadVideoFromInput()
+    private void YouTubeIdTextBox_TextChanged(object? sender, TextChangedEventArgs e)
+    {
+        UpdateCommandSuggestions();
+    }
+
+    private void YouTubeIdTextBox_LostFocus(object? sender, RoutedEventArgs e)
+    {
+        CloseCommandSuggestions();
+    }
+
+    private void CommandSuggestionsListBox_PointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        if (e.InitialPressMouseButton != MouseButton.Left)
+        {
+            return;
+        }
+
+        if (CommandSuggestionsListBox?.SelectedItem is string selected)
+        {
+            AcceptCommandSuggestion(selected);
+            YouTubeIdTextBox?.Focus();
+            e.Handled = true;
+        }
+    }
+
+    private void TryLoadVideoFromInput()
     {
         var rawId = YouTubeIdTextBox.Text ?? string.Empty;
         if (string.IsNullOrWhiteSpace(rawId))
         {
             SetLoadVideoButtonTooltip(InvalidVideoTooltip);
-            return false;
+            return;
         }
 
         var normalized = NormalizeMediaId(rawId);
         if (string.IsNullOrWhiteSpace(normalized))
         {
             SetLoadVideoButtonTooltip(InvalidVideoTooltip);
-            return false;
+            return;
         }
 
         m_currentMediaId = normalized;
@@ -546,7 +659,6 @@ public partial class MainWindow : Window
         }
 
         ApplyVolumeToWebView();
-        return true;
     }
 
     private static bool IsPlaylistId(string s)
@@ -972,6 +1084,265 @@ public partial class MainWindow : Window
         return CommandExecutionResult.Executed;
     }
 
+    private readonly struct CommandSuggestionContext
+    {
+        public string Query { get; init; }
+        public string CommandName { get; init; }
+        public int StartIndex { get; init; }
+        public int Length { get; init; }
+        public bool IsArgument { get; init; }
+        public bool IsExplicit { get; init; }
+    }
+
+    private void UpdateCommandSuggestions()
+    {
+        if (m_suppressCommandSuggestionUpdate)
+        {
+            return;
+        }
+
+        if (CommandSuggestionsPopup is not { } popup || CommandSuggestionsListBox is not { } listBox)
+        {
+            return;
+        }
+
+        if (!TryGetSuggestionContext(out var context))
+        {
+            CloseCommandSuggestions();
+            return;
+        }
+
+        var matches = GetSuggestionMatches(context);
+
+        if (matches.Count == 0)
+        {
+            CloseCommandSuggestions();
+            return;
+        }
+
+        var previousSelection = listBox.SelectedItem as string;
+        listBox.ItemsSource = matches;
+
+        var selectionIndex = previousSelection is null
+            ? -1
+            : matches.FindIndex(o => string.Equals(o, previousSelection, StringComparison.OrdinalIgnoreCase));
+
+        if (selectionIndex < 0)
+        {
+            selectionIndex = 0;
+        }
+
+        listBox.SelectedIndex = selectionIndex;
+
+        if (listBox.SelectedItem is { } item)
+        {
+            listBox.ScrollIntoView(item);
+        }
+
+        popup.IsOpen = true;
+    }
+
+    private void CloseCommandSuggestions()
+    {
+        if (CommandSuggestionsPopup is { } popup)
+        {
+            popup.IsOpen = false;
+        }
+
+        if (CommandSuggestionsListBox is { } listBox)
+        {
+            listBox.ItemsSource = null;
+            listBox.SelectedIndex = -1;
+        }
+    }
+
+    private void MoveCommandSuggestionSelection(int offset)
+    {
+        if (CommandSuggestionsListBox is not { } listBox || listBox.ItemCount == 0)
+        {
+            return;
+        }
+
+        var currentIndex = listBox.SelectedIndex;
+        if (currentIndex < 0)
+        {
+            currentIndex = offset > 0 ? 0 : listBox.ItemCount - 1;
+        }
+        else
+        {
+            currentIndex = Math.Clamp(currentIndex + offset, 0, listBox.ItemCount - 1);
+        }
+
+        listBox.SelectedIndex = currentIndex;
+
+        if (listBox.SelectedItem is { } item)
+        {
+            listBox.ScrollIntoView(item);
+        }
+    }
+
+    private void AcceptCommandSuggestion(string suggestion)
+    {
+        if (YouTubeIdTextBox is null)
+        {
+            return;
+        }
+
+        if (!TryGetSuggestionContext(out var context))
+        {
+            return;
+        }
+
+        var text = YouTubeIdTextBox.Text ?? string.Empty;
+        var prefix = context.StartIndex > 0 ? text.Substring(0, context.StartIndex) : string.Empty;
+        var suffixStart = Math.Min(context.StartIndex + context.Length, text.Length);
+        var suffix = suffixStart < text.Length ? text.Substring(suffixStart) : string.Empty;
+
+        var caret = prefix.Length + suggestion.Length;
+
+        m_suppressCommandSuggestionUpdate = true;
+        YouTubeIdTextBox.Text = prefix + suggestion + suffix;
+        YouTubeIdTextBox.CaretIndex = caret;
+        YouTubeIdTextBox.SelectionStart = caret;
+        YouTubeIdTextBox.SelectionEnd = caret;
+        m_suppressCommandSuggestionUpdate = false;
+
+        CloseCommandSuggestions();
+    }
+
+    private bool IsCurrentCommandSelectionComplete(string suggestion) =>
+        !TryGetSuggestionContext(out var context) || string.Equals(context.Query, suggestion, StringComparison.OrdinalIgnoreCase);
+
+    private bool TryGetSuggestionContext(out CommandSuggestionContext context)
+    {
+        context = default;
+
+        if (YouTubeIdTextBox is null)
+        {
+            return false;
+        }
+
+        var text = YouTubeIdTextBox.Text ?? string.Empty;
+        if (text.Length == 0)
+        {
+            return false;
+        }
+
+        var caretIndex = YouTubeIdTextBox.CaretIndex;
+        if (caretIndex != text.Length)
+        {
+            return false;
+        }
+
+        var span = text.AsSpan(0, caretIndex);
+        var index = 0;
+
+        while (index < span.Length && char.IsWhiteSpace(span[index]))
+        {
+            index++;
+        }
+
+        var isExplicit = false;
+        if (index < span.Length && span[index] == '>')
+        {
+            isExplicit = true;
+            index++;
+            while (index < span.Length && span[index] == ' ')
+            {
+                index++;
+            }
+        }
+
+        if (index > span.Length)
+        {
+            return false;
+        }
+
+        if (index == span.Length)
+        {
+            if (!isExplicit)
+            {
+                return false;
+            }
+
+            context = new CommandSuggestionContext
+            {
+                Query = string.Empty,
+                CommandName = string.Empty,
+                StartIndex = text.Length,
+                Length = 0,
+                IsArgument = false,
+                IsExplicit = true
+            };
+            return true;
+        }
+
+        var working = text.Substring(index, span.Length - index);
+        var firstSpace = working.IndexOf(' ');
+        var hasSpace = firstSpace >= 0;
+        var commandToken = hasSpace ? working[..firstSpace] : working;
+
+        if (!hasSpace)
+        {
+            if (!isExplicit && string.IsNullOrEmpty(commandToken))
+            {
+                return false;
+            }
+
+            context = new CommandSuggestionContext
+            {
+                Query = commandToken,
+                CommandName = commandToken,
+                StartIndex = index,
+                Length = commandToken.Length,
+                IsArgument = false,
+                IsExplicit = isExplicit
+            };
+            return true;
+        }
+
+        commandToken = commandToken.Trim();
+        if (commandToken.Length == 0)
+        {
+            return false;
+        }
+
+        var trailingSpace = working.EndsWith(' ');
+        int tokenStartRelative;
+        int tokenLength;
+        string query;
+
+        if (trailingSpace)
+        {
+            tokenStartRelative = working.Length;
+            tokenLength = 0;
+            query = string.Empty;
+        }
+        else
+        {
+            var lastSpace = working.LastIndexOf(' ');
+            tokenStartRelative = lastSpace + 1;
+            tokenLength = working.Length - tokenStartRelative;
+            query = working.Substring(tokenStartRelative, tokenLength);
+        }
+
+        if (!isExplicit && !m_commandHandlers.ContainsKey(commandToken))
+        {
+            return false;
+        }
+
+        context = new CommandSuggestionContext
+        {
+            Query = query,
+            CommandName = commandToken,
+            StartIndex = index + tokenStartRelative,
+            Length = tokenLength,
+            IsArgument = true,
+            IsExplicit = isExplicit
+        };
+        return true;
+    }
+
     private bool TryParseCommand(string rawInput, out string commandName, out string argument)
     {
         commandName = string.Empty;
@@ -992,6 +1363,13 @@ public partial class MainWindow : Window
             {
                 return false;
             }
+        }
+
+        if (m_commandHandlers.ContainsKey(trimmed))
+        {
+            commandName = trimmed;
+            argument = string.Empty;
+            return true;
         }
 
         var parts = trimmed.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);

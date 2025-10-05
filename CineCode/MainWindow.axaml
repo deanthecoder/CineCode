@@ -39,11 +39,30 @@
                         Spacing="8"
                         HorizontalAlignment="Center"
                         VerticalAlignment="Center">
-                <TextBox Name="YouTubeIdTextBox"
-                         Width="240"
-                         Watermark="> command or YouTube ID"
-                         KeyDown="YouTubeIdTextBox_KeyDown"
-                         GotFocus="YouTubeIdTextBox_GotFocus"/>
+                <Grid>
+                    <TextBox Name="YouTubeIdTextBox"
+                             Width="240"
+                             Watermark="> command or YouTube ID"
+                             KeyDown="YouTubeIdTextBox_KeyDown"
+                             GotFocus="YouTubeIdTextBox_GotFocus"
+                             LostFocus="YouTubeIdTextBox_LostFocus"
+                             TextChanged="YouTubeIdTextBox_TextChanged"/>
+                    <Popup Name="CommandSuggestionsPopup"
+                           PlacementTarget="{Binding #YouTubeIdTextBox}"
+                           Placement="BottomEdgeAlignedLeft"
+                           IsOpen="False">
+                        <Border Background="#2B2B2B"
+                                BorderBrush="#444"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="4"
+                                MinWidth="180">
+                            <ListBox Name="CommandSuggestionsListBox"
+                                     MaxHeight="180"
+                                     PointerReleased="CommandSuggestionsListBox_PointerReleased"/>
+                        </Border>
+                    </Popup>
+                </Grid>
                 <Button Name="LoadVideoButton" Click="LoadVideoButton_Click" ToolTip.Tip="Load Video">
                     <materialIcons:MaterialIcon Kind="DownloadOutline" Width="20" Height="20"/>
                 </Button>
