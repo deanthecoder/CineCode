@@ -67,7 +67,7 @@
                             </StackPanel>
                         </Flyout>
                     </Button.Flyout>
-                    <materialIcons:MaterialIcon Kind="VolumeHigh" Width="22" Height="22"/>
+                    <materialIcons:MaterialIcon x:Name="VolumeIcon" Kind="VolumeHigh" Width="22" Height="22"/>
                 </Button>
             </StackPanel>
         </Grid>

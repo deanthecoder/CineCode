@@ -33,9 +33,8 @@ public partial class MainWindow : Window
     private TaskCompletionSource<string?>? m_pendingContentRequest;
     private (string content, string extension)? m_pendingFile;
     private bool m_isPlaybackPaused;
-    private string m_currentVideoId = string.Empty;
-    private string m_currentVideoTitle = string.Empty;
-    private double m_currentVolume = 0.5;
+    private string m_currentVideoId;
+    private double m_currentVolume;
     private double? m_pendingVolume;
     private bool m_suppressVolumeChange;
     
@@ -49,7 +48,7 @@ public partial class MainWindow : Window
         var savedOpacity = Math.Clamp(Settings.Instance.Opacity, OpacitySlider.Minimum, OpacitySlider.Maximum);
         OpacitySlider.Value = savedOpacity;
         m_suppressOpacityUpdate = false;
-        var savedVideoId = NormalizeVideoId(Settings.Instance.YouTubeVideoId ?? string.Empty);
+        var savedVideoId = NormalizeVideoId(Settings.Instance.YouTubeVideoId);
         if (string.IsNullOrWhiteSpace(savedVideoId))
         {
             savedVideoId = NormalizeVideoId(YouTubeIdTextBox.Text ?? string.Empty);
@@ -68,6 +67,7 @@ public partial class MainWindow : Window
         m_suppressVolumeChange = true;
         VolumeSlider.Value = m_currentVolume;
         m_suppressVolumeChange = false;
+        UpdateVolumeIcon();
         UpdatePlayPauseIcon();
         SetLoadVideoButtonTooltip(DefaultLoadVideoTooltip);
     }
@@ -103,7 +103,7 @@ public partial class MainWindow : Window
 
     private void SetupEventHandlers()
     {
-        OpacitySlider.PropertyChanged += async (s, e) =>
+        OpacitySlider.PropertyChanged += async (_, e) =>
         {
             if (e.Property.Name == nameof(Slider.Value))
             {
@@ -198,7 +198,6 @@ public partial class MainWindow : Window
                     {
                         var errorCode = errorCodeElement.GetInt32();
                         Console.WriteLine($"[YouTube] Player error {errorCode}");
-                        m_currentVideoTitle = string.Empty;
                         SetLoadVideoButtonTooltip(GetPlayerErrorTooltip(errorCode));
                     }
                     break;
@@ -250,6 +249,7 @@ public partial class MainWindow : Window
             VolumeSlider.Value = m_currentVolume;
             m_suppressVolumeChange = false;
             m_pendingVolume = null;
+            UpdateVolumeIcon();
         }
 
         ApplyVolumeToWebView();
@@ -375,6 +375,21 @@ public partial class MainWindow : Window
         }
     }
 
+    private void UpdateVolumeIcon()
+    {
+        if (VolumeIcon is null)
+            return;
+
+        var isMuted = m_currentVolume <= 0.0001;
+        var isQuiet = m_currentVolume <= 0.5;
+        if (isMuted)
+            VolumeIcon.Kind = MaterialIconKind.VolumeMute;
+        else if (isQuiet)
+            VolumeIcon.Kind = MaterialIconKind.VolumeMedium;
+        else
+            VolumeIcon.Kind = MaterialIconKind.VolumeHigh;
+    }
+
     private void LoadVideoButton_Click(object? sender, RoutedEventArgs e)
     {
         TryLoadVideoFromInput();
@@ -406,7 +421,6 @@ public partial class MainWindow : Window
         }
 
         m_currentVideoId = normalized;
-        m_currentVideoTitle = string.Empty;
         YouTubeIdTextBox.Text = m_currentVideoId;
         Settings.Instance.YouTubeVideoId = m_currentVideoId;
 
@@ -497,10 +511,7 @@ public partial class MainWindow : Window
             : string.Empty;
 
         if (!string.IsNullOrWhiteSpace(title))
-        {
-            m_currentVideoTitle = title;
             SetLoadVideoButtonTooltip($"Video: {title}");
-        }
     }
 
     private void SetLoadVideoButtonTooltip(string? message)
@@ -578,6 +589,7 @@ public partial class MainWindow : Window
         }
 
         m_currentVolume = Math.Clamp(e.NewValue, 0, 1);
+        UpdateVolumeIcon();
         Settings.Instance.Volume = m_currentVolume;
         ApplyVolumeToWebView();
     }
@@ -658,7 +670,7 @@ public partial class MainWindow : Window
 
     private static void TrimMruList()
     {
-        var list = Settings.Instance.MruFiles ?? [];
+        var list = Settings.Instance.MruFiles;
         var trimmed = new List<string>(MaxMruEntries);
 
         foreach (var entry in list.Where(entry => !string.IsNullOrWhiteSpace(entry)))
@@ -765,15 +777,12 @@ public partial class MainWindow : Window
                 Title = "Save Code File"
             });
 
-            if (file != null)
-            {
-                m_currentFilePath = file.Path.LocalPath;
-                UpdateMruList(m_currentFilePath);
-            }
-            else
+            if (file == null)
             {
                 return;
             }
+            m_currentFilePath = file.Path.LocalPath;
+            UpdateMruList(m_currentFilePath);
         }
 
         if (!m_isEditorReady) return;
