@@ -9,6 +9,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Controls.Primitives;
+using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
@@ -21,6 +22,9 @@ namespace CineCode;
 public partial class MainWindow : Window
 {
     private const int MaxMruEntries = 50;
+    private const string DefaultLoadVideoTooltip = "Load Video";
+    private const string InvalidVideoTooltip = "Enter a valid YouTube URL or ID.";
+    private const string LoadingVideoTooltip = "Loading video...";
 
     private string m_currentFilePath = string.Empty;
     private bool m_isEditorReady;
@@ -30,6 +34,7 @@ public partial class MainWindow : Window
     private (string content, string extension)? m_pendingFile;
     private bool m_isPlaybackPaused;
     private string m_currentVideoId = string.Empty;
+    private string m_currentVideoTitle = string.Empty;
     private double m_currentVolume = 0.5;
     private double? m_pendingVolume;
     private bool m_suppressVolumeChange;
@@ -62,6 +67,7 @@ public partial class MainWindow : Window
         VolumeSlider.Value = m_currentVolume;
         m_suppressVolumeChange = false;
         UpdatePlayPauseIcon();
+        SetLoadVideoButtonTooltip(DefaultLoadVideoTooltip);
     }
 
     private void InitializeWebView()
@@ -188,8 +194,14 @@ public partial class MainWindow : Window
                 case "player-error":
                     if (document.RootElement.TryGetProperty("code", out var errorCodeElement))
                     {
-                        Console.WriteLine($"[YouTube] Player error {errorCodeElement.GetInt32()}");
+                        var errorCode = errorCodeElement.GetInt32();
+                        Console.WriteLine($"[YouTube] Player error {errorCode}");
+                        m_currentVideoTitle = string.Empty;
+                        SetLoadVideoButtonTooltip(GetPlayerErrorTooltip(errorCode));
                     }
+                    break;
+                case "video-metadata":
+                    HandleVideoMetadata(document.RootElement);
                     break;
             }
         }
@@ -227,6 +239,7 @@ public partial class MainWindow : Window
         });
         m_isPlaybackPaused = false;
         UpdatePlayPauseIcon();
+        SetLoadVideoButtonTooltip(LoadingVideoTooltip);
 
         if (m_pendingVolume.HasValue)
         {
@@ -362,31 +375,56 @@ public partial class MainWindow : Window
 
     private void LoadVideoButton_Click(object? sender, RoutedEventArgs e)
     {
-        var rawId = YouTubeIdTextBox.Text?.Trim();
+        TryLoadVideoFromInput();
+    }
+
+    private void YouTubeIdTextBox_KeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter || e.Key == Key.Return)
+        {
+            e.Handled = true;
+            TryLoadVideoFromInput();
+        }
+    }
+
+    private bool TryLoadVideoFromInput()
+    {
+        var rawId = YouTubeIdTextBox.Text ?? string.Empty;
         if (string.IsNullOrWhiteSpace(rawId))
         {
-            return;
+            SetLoadVideoButtonTooltip(InvalidVideoTooltip);
+            return false;
         }
 
         var normalized = NormalizeVideoId(rawId);
         if (string.IsNullOrWhiteSpace(normalized))
         {
-            return;
+            SetLoadVideoButtonTooltip(InvalidVideoTooltip);
+            return false;
         }
 
         m_currentVideoId = normalized;
+        m_currentVideoTitle = string.Empty;
         YouTubeIdTextBox.Text = m_currentVideoId;
         Settings.Instance.YouTubeVideoId = m_currentVideoId;
-        SendWebViewMessage(new
-        {
-            type = "load-video",
-            videoId = m_currentVideoId,
-            autoplay = true
-        });
+
         m_isPlaybackPaused = false;
         UpdatePlayPauseIcon();
+        SetLoadVideoButtonTooltip(LoadingVideoTooltip);
+
+        if (m_isEditorReady)
+        {
+            SendWebViewMessage(new
+            {
+                type = "load-video",
+                videoId = m_currentVideoId,
+                autoplay = true
+            });
+            TryEnableThirdPartyCookies();
+        }
+
         ApplyVolumeToWebView();
-        TryEnableThirdPartyCookies();
+        return true;
     }
 
     private static string NormalizeVideoId(string input)
@@ -396,8 +434,138 @@ public partial class MainWindow : Window
             return string.Empty;
         }
 
-        var filtered = new string(input.Where(ch => char.IsLetterOrDigit(ch) || ch is '-' or '_').ToArray());
-        return filtered;
+        var trimmed = input.Trim();
+
+        if (Uri.TryCreate(trimmed, UriKind.Absolute, out var uri))
+        {
+            var host = uri.Host;
+            if (host.EndsWith("youtu.be", StringComparison.OrdinalIgnoreCase))
+            {
+                var path = uri.AbsolutePath.Trim('/');
+                return SanitizeVideoId(path);
+            }
+
+            if (host.Contains("youtube.com", StringComparison.OrdinalIgnoreCase))
+            {
+                var queryId = TryGetQueryParameter(uri.Query, "v");
+                if (!string.IsNullOrWhiteSpace(queryId))
+                {
+                    return SanitizeVideoId(queryId);
+                }
+
+                var segments = uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+                if (segments.Length >= 2)
+                {
+                    if (string.Equals(segments[0], "embed", StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(segments[0], "shorts", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return SanitizeVideoId(segments[1]);
+                    }
+                }
+            }
+        }
+
+        return SanitizeVideoId(trimmed);
+    }
+
+    private static string SanitizeVideoId(string? input)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+        {
+            return string.Empty;
+        }
+
+        return new string(input.Where(ch => char.IsLetterOrDigit(ch) || ch is '-' or '_').ToArray());
+    }
+
+    private void HandleVideoMetadata(JsonElement element)
+    {
+        var incomingId = element.TryGetProperty("videoId", out var videoIdElement)
+            ? NormalizeVideoId(videoIdElement.GetString() ?? string.Empty)
+            : string.Empty;
+
+        if (!string.IsNullOrWhiteSpace(incomingId) &&
+            !string.Equals(incomingId, m_currentVideoId, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        var title = element.TryGetProperty("title", out var titleElement)
+            ? titleElement.GetString() ?? string.Empty
+            : string.Empty;
+
+        if (!string.IsNullOrWhiteSpace(title))
+        {
+            m_currentVideoTitle = title;
+            SetLoadVideoButtonTooltip($"Video: {title}");
+        }
+    }
+
+    private void SetLoadVideoButtonTooltip(string? message)
+    {
+        var tooltipText = string.IsNullOrWhiteSpace(message) ? DefaultLoadVideoTooltip : message;
+
+        void ApplyTooltip()
+        {
+            ToolTip.SetTip(LoadVideoButton, tooltipText);
+        }
+
+        if (Dispatcher.UIThread.CheckAccess())
+        {
+            ApplyTooltip();
+        }
+        else
+        {
+            Dispatcher.UIThread.Post(ApplyTooltip);
+        }
+    }
+
+    private static string GetPlayerErrorTooltip(int errorCode)
+    {
+        return errorCode switch
+        {
+            2 => "Invalid YouTube ID or URL.",
+            5 => "Cannot play this video right now.",
+            100 => "Video not found or removed.",
+            101 => "Network is unreachable.",
+            150 => "Playback is restricted by the owner.",
+            _ => "Unable to load video."
+        };
+    }
+
+    private static string? TryGetQueryParameter(string query, string key)
+    {
+        if (string.IsNullOrEmpty(query) || string.IsNullOrEmpty(key))
+        {
+            return null;
+        }
+
+        var trimmed = query.TrimStart('?');
+        if (trimmed.Length == 0)
+        {
+            return null;
+        }
+
+        var pairs = trimmed.Split('&', StringSplitOptions.RemoveEmptyEntries);
+        foreach (var pair in pairs)
+        {
+            var parts = pair.Split('=', 2);
+            if (parts.Length == 0)
+            {
+                continue;
+            }
+
+            var name = Uri.UnescapeDataString(parts[0]);
+            if (!string.Equals(name, key, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var value = parts.Length > 1 ? Uri.UnescapeDataString(parts[1]) : string.Empty;
+            return value;
+        }
+
+        return null;
     }
 
     private void VolumeSlider_ValueChanged(object? sender, RangeBaseValueChangedEventArgs e)

@@ -132,6 +132,9 @@
         let currentVideoId = DEFAULT_VIDEO_ID;
         let pendingVideoRequest = null;
         let currentVolume = 0.5;
+        let metadataUpdateTimer = null;
+        let lastVideoMetadata = { id: '', title: '' };
+        let metadataRetryCount = 0;
 
         function ensureDispatchBridge() {
             if (typeof window.__dispatchMessageCallback === 'function' && Array.isArray(window.__receiveMessageCallbacks)) {
@@ -288,6 +291,12 @@
 
         function queueVideoLoad(videoId, autoplay = true) {
             currentVideoId = videoId;
+            lastVideoMetadata = { id: '', title: '' };
+            metadataRetryCount = 0;
+            if (metadataUpdateTimer) {
+                clearTimeout(metadataUpdateTimer);
+                metadataUpdateTimer = null;
+            }
             pendingVideoRequest = {
                 videoId,
                 autoplay
@@ -313,6 +322,7 @@
                 videoId: request.videoId,
                 startSeconds: 0
             });
+            scheduleVideoMetadataUpdate();
 
             if (request.autoplay) {
                 player.playVideo?.();
@@ -328,6 +338,52 @@
 
         function notifyPlaybackChange() {
             hostBridge.notify({ type: 'playback-changed', state: isPaused ? 'paused' : 'playing' });
+        }
+
+        function scheduleVideoMetadataUpdate(delay = 250) {
+            if (metadataUpdateTimer) {
+                clearTimeout(metadataUpdateTimer);
+            }
+
+            const effectiveDelay = Number.isFinite(delay) ? Math.max(0, delay) : 250;
+
+            metadataUpdateTimer = setTimeout(() => {
+                metadataUpdateTimer = null;
+                sendVideoMetadata();
+            }, effectiveDelay);
+        }
+
+        function sendVideoMetadata() {
+            if (!player || typeof player.getVideoData !== 'function') {
+                return;
+            }
+
+            const data = player.getVideoData();
+            if (!data) {
+                return;
+            }
+
+            const videoId = typeof data.video_id === 'string' && data.video_id.length > 0 ? data.video_id : currentVideoId;
+            const title = typeof data.title === 'string' ? data.title.trim() : '';
+
+            if (!title) {
+                if (metadataRetryCount < 5) {
+                    metadataRetryCount += 1;
+                    scheduleVideoMetadataUpdate(500);
+                } else {
+                    metadataRetryCount = 0;
+                }
+                return;
+            }
+
+            metadataRetryCount = 0;
+
+            if (videoId === lastVideoMetadata.id && title === lastVideoMetadata.title) {
+                return;
+            }
+
+            lastVideoMetadata = { id: videoId, title };
+            hostBridge.notify({ type: 'video-metadata', videoId, title });
         }
 
         function setPlaybackState(shouldPause) {
@@ -450,6 +506,16 @@
                 hostBridge.notify({ type: 'player-error', code: event.data });
             });
 
+            player.addEventListener('onStateChange', event => {
+                if (!event || typeof event.data !== 'number' || !window.YT || !window.YT.PlayerState) {
+                    return;
+                }
+
+                if (event.data === YT.PlayerState.PLAYING || event.data === YT.PlayerState.CUED) {
+                    scheduleVideoMetadataUpdate();
+                }
+            });
+
             applyVolume();
 
             executePendingVideoRequest();
@@ -463,6 +529,7 @@
             }
 
             notifyPlaybackChange();
+            scheduleVideoMetadataUpdate(0);
         }
 
         editor.on('change', handleEditorActivity);

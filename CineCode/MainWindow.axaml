@@ -37,7 +37,8 @@
             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                 <TextBox Name="YouTubeIdTextBox"
                          Width="160"
-                         Watermark="YouTube ID"/>
+                         Watermark="YouTube ID"
+                         KeyDown="YouTubeIdTextBox_KeyDown"/>
                 <Button Name="LoadVideoButton" Click="LoadVideoButton_Click" ToolTip.Tip="Load Video">
                     <materialIcons:MaterialIcon Kind="DownloadOutline" Width="20" Height="20"/>
                 </Button>
