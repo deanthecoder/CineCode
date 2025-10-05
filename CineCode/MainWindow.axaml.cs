@@ -1,52 +1,54 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Reflection;
+using System.Text.Json;
+using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Interactivity;
-using Avalonia.Platform.Storage;
-using System;
-using System.IO;
-using System.Reflection;
-using System.Threading.Tasks;
-using AvaloniaWebView;
-using WebViewCore.Events;
-using System.Text.Json;
-using Avalonia.Threading;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input.Platform;
-using System.Linq;
+using Avalonia.Interactivity;
+using Avalonia.Platform.Storage;
+using Avalonia.Threading;
 using Material.Icons;
-using Material.Icons.Avalonia;
+using WebViewCore.Events;
 
 namespace CineCode;
 
 public partial class MainWindow : Window
 {
-    private string _currentFilePath = string.Empty;
-    private bool _isEditorReady;
-    private double? _pendingOpacity;
-    private bool _suppressOpacityUpdate;
-    private TaskCompletionSource<string?>? _pendingContentRequest;
-    private (string content, string extension)? _pendingFile;
-    private bool _isPlaybackPaused;
-    private string _currentVideoId = "eYhP50P31h4";
-    private double _currentVolume = 0.5;
-    private double? _pendingVolume;
-    private bool _suppressVolumeChange;
+    private const int MaxMruEntries = 50;
+
+    private string m_currentFilePath = string.Empty;
+    private bool m_isEditorReady;
+    private double? m_pendingOpacity;
+    private readonly bool m_suppressOpacityUpdate;
+    private TaskCompletionSource<string?>? m_pendingContentRequest;
+    private (string content, string extension)? m_pendingFile;
+    private bool m_isPlaybackPaused;
+    private string m_currentVideoId = "eYhP50P31h4";
+    private double m_currentVolume = 0.5;
+    private double? m_pendingVolume;
+    private bool m_suppressVolumeChange;
     
     public MainWindow()
     {
         InitializeComponent();
         InitializeWebView();
         SetupEventHandlers();
-        _suppressOpacityUpdate = true;
+        TrimMruList();
+        m_suppressOpacityUpdate = true;
         var savedOpacity = Math.Clamp(Settings.Instance.Opacity, OpacitySlider.Minimum, OpacitySlider.Maximum);
         OpacitySlider.Value = savedOpacity;
-        _suppressOpacityUpdate = false;
-        _currentVideoId = NormalizeVideoId(YouTubeIdTextBox.Text ?? _currentVideoId);
-        YouTubeIdTextBox.Text = _currentVideoId;
-        _suppressVolumeChange = true;
-        VolumeSlider.Value = _currentVolume;
-        _suppressVolumeChange = false;
+        m_suppressOpacityUpdate = false;
+        m_currentVideoId = NormalizeVideoId(YouTubeIdTextBox.Text ?? m_currentVideoId);
+        YouTubeIdTextBox.Text = m_currentVideoId;
+        m_suppressVolumeChange = true;
+        VolumeSlider.Value = m_currentVolume;
+        m_suppressVolumeChange = false;
         UpdatePlayPauseIcon();
     }
 
@@ -61,9 +63,9 @@ public partial class MainWindow : Window
     {
         try
         {
-            _isEditorReady = false;
+            m_isEditorReady = false;
             var assembly = Assembly.GetExecutingAssembly();
-            var resourceName = "CineCode.Assets.editor.html";
+            const string resourceName = "CineCode.Assets.editor.html";
             
             using var stream = assembly.GetManifestResourceStream(resourceName);
             if (stream != null)
@@ -86,7 +88,7 @@ public partial class MainWindow : Window
             if (e.Property.Name == nameof(Slider.Value))
             {
                 var opacity = OpacitySlider.Value;
-                if (!_suppressOpacityUpdate)
+                if (!m_suppressOpacityUpdate)
                 {
                     Settings.Instance.Opacity = opacity;
                 }
@@ -134,8 +136,8 @@ public partial class MainWindow : Window
                     var content = document.RootElement.TryGetProperty("content", out var contentElement)
                         ? contentElement.GetString()
                         : null;
-                    _pendingContentRequest?.TrySetResult(content);
-                    _pendingContentRequest = null;
+                    m_pendingContentRequest?.TrySetResult(content);
+                    m_pendingContentRequest = null;
                     break;
                 case "log":
                     if (document.RootElement.TryGetProperty("message", out var messageElement))
@@ -148,7 +150,7 @@ public partial class MainWindow : Window
                     {
                         var state = stateElement.GetString();
                         var paused = string.Equals(state, "paused", StringComparison.OrdinalIgnoreCase);
-                        _isPlaybackPaused = paused;
+                        m_isPlaybackPaused = paused;
                         UpdatePlayPauseIcon();
                     }
                     break;
@@ -187,40 +189,40 @@ public partial class MainWindow : Window
 
     private async Task OnEditorReadyAsync()
     {
-        _isEditorReady = true;
+        m_isEditorReady = true;
 
-        if (_pendingFile is { } pendingFile)
+        if (m_pendingFile is { } pendingFile)
         {
             SendWebViewMessage(new
             {
                 type = "load-code",
-                content = pendingFile.content,
-                extension = pendingFile.extension
+                pendingFile.content,
+                pendingFile.extension
             });
-            _pendingFile = null;
+            m_pendingFile = null;
         }
 
-        var opacity = _pendingOpacity ?? OpacitySlider.Value;
-        _pendingOpacity = null;
+        var opacity = m_pendingOpacity ?? OpacitySlider.Value;
+        m_pendingOpacity = null;
 
         await ApplyEditorOpacityAsync(opacity);
 
         SendWebViewMessage(new
         {
             type = "load-video",
-            videoId = _currentVideoId,
+            videoId = m_currentVideoId,
             autoplay = true
         });
-        _isPlaybackPaused = false;
+        m_isPlaybackPaused = false;
         UpdatePlayPauseIcon();
 
-        if (_pendingVolume.HasValue)
+        if (m_pendingVolume.HasValue)
         {
-            _currentVolume = Math.Clamp(_pendingVolume.Value, 0, 1);
-            _suppressVolumeChange = true;
-            VolumeSlider.Value = _currentVolume;
-            _suppressVolumeChange = false;
-            _pendingVolume = null;
+            m_currentVolume = Math.Clamp(m_pendingVolume.Value, 0, 1);
+            m_suppressVolumeChange = true;
+            VolumeSlider.Value = m_currentVolume;
+            m_suppressVolumeChange = false;
+            m_pendingVolume = null;
         }
 
         ApplyVolumeToWebView();
@@ -229,9 +231,9 @@ public partial class MainWindow : Window
 
     private Task ApplyEditorOpacityAsync(double opacity)
     {
-        if (!_isEditorReady)
+        if (!m_isEditorReady)
         {
-            _pendingOpacity = opacity;
+            m_pendingOpacity = opacity;
             return Task.CompletedTask;
         }
 
@@ -283,28 +285,30 @@ public partial class MainWindow : Window
         if (files.Count >= 1)
         {
             var file = files[0];
-            _currentFilePath = file.Path.LocalPath;
+            m_currentFilePath = file.Path.LocalPath;
             
             await using var stream = await file.OpenReadAsync();
             using var reader = new StreamReader(stream);
             var content = await reader.ReadToEndAsync();
             
-            var extension = Path.GetExtension(_currentFilePath).TrimStart('.');
+            var extension = Path.GetExtension(m_currentFilePath).TrimStart('.');
             
-            if (_isEditorReady)
+            if (m_isEditorReady)
             {
                 SendWebViewMessage(new { type = "load-code", content, extension });
             }
             else
             {
-                _pendingFile = (content, extension);
+                m_pendingFile = (content, extension);
             }
+
+            UpdateMruList(m_currentFilePath);
         }
     }
 
     private void PlayPauseButton_Click(object? sender, RoutedEventArgs e)
     {
-        if (!_isEditorReady)
+        if (!m_isEditorReady)
         {
             return;
         }
@@ -324,7 +328,7 @@ public partial class MainWindow : Window
 
     private void SeekVideo(double offsetSeconds)
     {
-        if (!_isEditorReady)
+        if (!m_isEditorReady)
         {
             return;
         }
@@ -340,7 +344,7 @@ public partial class MainWindow : Window
     {
         if (PlayPauseIcon is { })
         {
-            PlayPauseIcon.Kind = _isPlaybackPaused ? MaterialIconKind.PlayCircleOutline : MaterialIconKind.PauseCircleOutline;
+            PlayPauseIcon.Kind = m_isPlaybackPaused ? MaterialIconKind.PlayCircleOutline : MaterialIconKind.PauseCircleOutline;
         }
     }
 
@@ -358,15 +362,15 @@ public partial class MainWindow : Window
             return;
         }
 
-        _currentVideoId = normalized;
-        YouTubeIdTextBox.Text = _currentVideoId;
+        m_currentVideoId = normalized;
+        YouTubeIdTextBox.Text = m_currentVideoId;
         SendWebViewMessage(new
         {
             type = "load-video",
-            videoId = _currentVideoId,
+            videoId = m_currentVideoId,
             autoplay = true
         });
-        _isPlaybackPaused = false;
+        m_isPlaybackPaused = false;
         UpdatePlayPauseIcon();
         ApplyVolumeToWebView();
         TryEnableThirdPartyCookies();
@@ -385,35 +389,35 @@ public partial class MainWindow : Window
 
     private void VolumeSlider_ValueChanged(object? sender, RangeBaseValueChangedEventArgs e)
     {
-        if (_suppressVolumeChange)
+        if (m_suppressVolumeChange)
         {
             return;
         }
 
-        _currentVolume = Math.Clamp(e.NewValue, 0, 1);
+        m_currentVolume = Math.Clamp(e.NewValue, 0, 1);
         ApplyVolumeToWebView();
     }
 
     private void ApplyVolumeToWebView()
     {
-        if (!_isEditorReady)
+        if (!m_isEditorReady)
         {
-            _pendingVolume = _currentVolume;
+            m_pendingVolume = m_currentVolume;
             return;
         }
 
         SendWebViewMessage(new
         {
             type = "set-volume",
-            value = _currentVolume
+            value = m_currentVolume
         });
     }
 
-    private bool _cookiesEnabled;
+    private bool m_cookiesEnabled;
 
     private void TryEnableThirdPartyCookies()
     {
-        if (_cookiesEnabled)
+        if (m_cookiesEnabled)
         {
             return;
         }
@@ -459,7 +463,7 @@ public partial class MainWindow : Window
                 Console.WriteLine("[WebView] Enabled third-party cookies for playback.");
             }
 
-            _cookiesEnabled = true;
+            m_cookiesEnabled = true;
         }
         catch (Exception ex)
         {
@@ -467,17 +471,92 @@ public partial class MainWindow : Window
         }
     }
 
+
+    private static void TrimMruList()
+    {
+        var list = Settings.Instance.MruFiles ?? [];
+        var trimmed = new List<string>(MaxMruEntries);
+
+        foreach (var entry in list.Where(entry => !string.IsNullOrWhiteSpace(entry)))
+        {
+            string fullPath;
+            try
+            {
+                fullPath = Path.GetFullPath(entry);
+            }
+            catch
+            {
+                continue;
+            }
+
+            if (!IsFileAccessible(fullPath))
+                continue;
+            trimmed.Add(fullPath);
+            if (trimmed.Count >= MaxMruEntries)
+                break;
+        }
+
+        if (!list.SequenceEqual(trimmed, StringComparer.OrdinalIgnoreCase))
+        {
+            Settings.Instance.MruFiles = trimmed;
+        }
+    }
+
+    private static void UpdateMruList(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return;
+
+        try
+        {
+            var fullPath = Path.GetFullPath(path);
+            var list = Settings.Instance.MruFiles;
+
+            list.RemoveAll(p => string.Equals(p, fullPath, StringComparison.OrdinalIgnoreCase));
+            list.Insert(0, fullPath);
+
+            if (list.Count > MaxMruEntries)
+            {
+                list = list.Take(MaxMruEntries).ToList();
+            }
+
+            Settings.Instance.MruFiles = list;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error updating MRU list: {ex.Message}");
+        }
+    }
+
+    private static bool IsFileAccessible(string path)
+    {
+        try
+        {
+            if (!File.Exists(path))
+            {
+                return false;
+            }
+
+            using var stream = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     private async void HandlePasteRequestedAsync()
     {
         try
         {
-            var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+            var clipboard = GetTopLevel(this)?.Clipboard;
             if (clipboard == null)
             {
                 return;
             }
 
-            var text = await ClipboardExtensions.TryGetTextAsync(clipboard) ?? string.Empty;
+            var text = await clipboard.TryGetTextAsync() ?? string.Empty;
             SendWebViewMessage(new
             {
                 type = "paste-content",
@@ -492,7 +571,7 @@ public partial class MainWindow : Window
 
     private async void SaveFile_Click(object? sender, RoutedEventArgs e)
     {
-        if (string.IsNullOrEmpty(_currentFilePath))
+        if (string.IsNullOrEmpty(m_currentFilePath))
         {
             var topLevel = GetTopLevel(this);
             if (topLevel == null) return;
@@ -504,7 +583,8 @@ public partial class MainWindow : Window
 
             if (file != null)
             {
-                _currentFilePath = file.Path.LocalPath;
+                m_currentFilePath = file.Path.LocalPath;
+                UpdateMruList(m_currentFilePath);
             }
             else
             {
@@ -512,11 +592,11 @@ public partial class MainWindow : Window
             }
         }
 
-        if (!_isEditorReady) return;
+        if (!m_isEditorReady) return;
 
-        _pendingContentRequest?.TrySetCanceled();
+        m_pendingContentRequest?.TrySetCanceled();
         var completionSource = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
-        _pendingContentRequest = completionSource;
+        m_pendingContentRequest = completionSource;
 
         SendWebViewMessage(new { type = "request-content" });
 
@@ -527,23 +607,24 @@ public partial class MainWindow : Window
             try
             {
                 var content = await completionSource.Task;
-                _pendingContentRequest = null;
+                m_pendingContentRequest = null;
 
                 if (content != null)
                 {
-                    await File.WriteAllTextAsync(_currentFilePath, content);
+                    await File.WriteAllTextAsync(m_currentFilePath, content);
+                    UpdateMruList(m_currentFilePath);
                 }
             }
             catch (Exception ex)
             {
-                _pendingContentRequest = null;
+                m_pendingContentRequest = null;
                 Console.WriteLine($"Error retrieving editor content: {ex.Message}");
             }
         }
         else
         {
             Console.WriteLine("Timed out waiting for editor content.");
-            _pendingContentRequest = null;
+            m_pendingContentRequest = null;
         }
     }
 

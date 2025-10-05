@@ -1,19 +1,18 @@
 using System;
 using System.Windows.Input;
 using Avalonia;
-using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
-using CineCode.Views;
 using Avalonia.Markup.Xaml;
 using AvaloniaWebView;
+using CineCode.Views;
 
 namespace CineCode;
 
-public partial class App : Application
+public class App : Application
 {
     public ICommand AboutCommand { get; }
 
-    private bool _aboutDialogOpen;
+    private bool m_aboutDialogOpen;
 
     public App()
     {
@@ -40,7 +39,7 @@ public partial class App : Application
 
     private void ShowAboutDialog()
     {
-        if (_aboutDialogOpen)
+        if (m_aboutDialogOpen)
         {
             return;
         }
@@ -51,28 +50,28 @@ public partial class App : Application
         }
 
         var dialog = new AboutDialog();
-        dialog.Opened += (_, _) => _aboutDialogOpen = true;
-        dialog.Closed += (_, _) => _aboutDialogOpen = false;
+        dialog.Opened += (_, _) => m_aboutDialogOpen = true;
+        dialog.Closed += (_, _) => m_aboutDialogOpen = false;
 
         _ = dialog.ShowDialog(desktop.MainWindow);
     }
 
     private sealed class ActionCommand : ICommand
     {
-        private readonly Action? _execute;
-        private readonly Func<bool>? _canExecute;
+        private readonly Action? m_execute;
+        private readonly Func<bool>? m_canExecute;
 
         public ActionCommand(Action? execute, Func<bool>? canExecute = null)
         {
-            _execute = execute;
-            _canExecute = canExecute;
+            m_execute = execute;
+            m_canExecute = canExecute;
         }
 
         public event EventHandler? CanExecuteChanged;
 
-        public bool CanExecute(object? parameter) => _canExecute?.Invoke() ?? true;
+        public bool CanExecute(object? parameter) => m_canExecute?.Invoke() ?? true;
 
-        public void Execute(object? parameter) => _execute?.Invoke();
+        public void Execute(object? parameter) => m_execute?.Invoke();
 
         public void RaiseCanExecuteChanged() => CanExecuteChanged?.Invoke(this, EventArgs.Empty);
     }
