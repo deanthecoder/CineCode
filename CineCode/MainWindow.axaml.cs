@@ -14,6 +14,7 @@ using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
+using CineCode.Views;
 using Material.Icons;
 using WebViewCore.Events;
 
@@ -76,7 +77,7 @@ public partial class MainWindow : Window
     {
         return new Dictionary<string, Func<string, Task>>(StringComparer.OrdinalIgnoreCase)
         {
-            ["open"] = _ => OpenFileAsync(),
+            ["open"] = HandleOpenCommandAsync,
             ["save"] = _ => SaveFileAsync(),
             ["exit"] = _ =>
             {
@@ -332,25 +333,95 @@ public partial class MainWindow : Window
         if (files.Count >= 1)
         {
             var file = files[0];
-            m_currentFilePath = file.Path.LocalPath;
-            
+            var path = file.Path.LocalPath;
+
             await using var stream = await file.OpenReadAsync();
             using var reader = new StreamReader(stream);
             var content = await reader.ReadToEndAsync();
-            
-            var extension = Path.GetExtension(m_currentFilePath).TrimStart('.');
-            
-            if (m_isEditorReady)
+
+            ApplyLoadedFile(content, path);
+        }
+    }
+
+    private Task HandleOpenCommandAsync(string argument)
+    {
+        if (string.Equals(argument, "recent", StringComparison.OrdinalIgnoreCase))
+        {
+            return OpenRecentAsync();
+        }
+
+        return OpenFileAsync();
+    }
+
+    private async Task OpenRecentAsync()
+    {
+        TrimMruList();
+        var recentFiles = Settings.Instance.MruFiles;
+
+        if (recentFiles.Count == 0)
+        {
+            SetLoadVideoButtonTooltip("No recent files found.");
+            return;
+        }
+
+        if (!IsActive)
+        {
+            Activate();
+        }
+
+        var dialog = new OpenRecentDialog(recentFiles);
+        var selectedPath = await dialog.ShowDialog<string?>(this);
+
+        if (string.IsNullOrWhiteSpace(selectedPath))
+        {
+            return;
+        }
+
+        await LoadFileFromPathAsync(selectedPath);
+    }
+
+    private async Task LoadFileFromPathAsync(string path)
+    {
+        try
+        {
+            var fullPath = Path.GetFullPath(path);
+
+            if (!File.Exists(fullPath))
             {
-                SendWebViewMessage(new { type = "load-code", content, extension });
-            }
-            else
-            {
-                m_pendingFile = (content, extension);
+                SetLoadVideoButtonTooltip($"File not found: {Path.GetFileName(fullPath)}");
+                return;
             }
 
-            UpdateMruList(m_currentFilePath);
+            var content = await File.ReadAllTextAsync(fullPath);
+            ApplyLoadedFile(content, fullPath);
         }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error opening recent file '{path}': {ex.Message}");
+            SetLoadVideoButtonTooltip("Failed to open recent file.");
+        }
+    }
+
+    private void ApplyLoadedFile(string content, string filePath)
+    {
+        if (string.IsNullOrWhiteSpace(filePath))
+        {
+            return;
+        }
+
+        m_currentFilePath = filePath;
+        var extension = Path.GetExtension(m_currentFilePath).TrimStart('.');
+
+        if (m_isEditorReady)
+        {
+            SendWebViewMessage(new { type = "load-code", content, extension });
+        }
+        else
+        {
+            m_pendingFile = (content, extension);
+        }
+
+        UpdateMruList(m_currentFilePath);
     }
 
     private void PlayPauseButton_Click(object? sender, RoutedEventArgs e)
