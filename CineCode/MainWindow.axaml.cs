@@ -24,6 +24,7 @@ public partial class MainWindow : Window
     private string _currentFilePath = string.Empty;
     private bool _isEditorReady;
     private double? _pendingOpacity;
+    private bool _suppressOpacityUpdate;
     private TaskCompletionSource<string?>? _pendingContentRequest;
     private (string content, string extension)? _pendingFile;
     private bool _isPlaybackPaused;
@@ -37,6 +38,10 @@ public partial class MainWindow : Window
         InitializeComponent();
         InitializeWebView();
         SetupEventHandlers();
+        _suppressOpacityUpdate = true;
+        var savedOpacity = Math.Clamp(Settings.Instance.Opacity, OpacitySlider.Minimum, OpacitySlider.Maximum);
+        OpacitySlider.Value = savedOpacity;
+        _suppressOpacityUpdate = false;
         _currentVideoId = NormalizeVideoId(YouTubeIdTextBox.Text ?? _currentVideoId);
         YouTubeIdTextBox.Text = _currentVideoId;
         _suppressVolumeChange = true;
@@ -80,7 +85,13 @@ public partial class MainWindow : Window
         {
             if (e.Property.Name == nameof(Slider.Value))
             {
-                await ApplyEditorOpacityAsync(OpacitySlider.Value);
+                var opacity = OpacitySlider.Value;
+                if (!_suppressOpacityUpdate)
+                {
+                    Settings.Instance.Opacity = opacity;
+                }
+
+                await ApplyEditorOpacityAsync(opacity);
             }
         };
     }
