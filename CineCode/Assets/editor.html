@@ -250,6 +250,30 @@
             }
         };
 
+        function blurEditor() {
+            try {
+                if (!editor) {
+                    return;
+                }
+
+                if (editor.display && editor.display.input && typeof editor.display.input.blur === 'function') {
+                    editor.display.input.blur();
+                }
+
+                const input = typeof editor.getInputField === 'function' ? editor.getInputField() : null;
+                if (input && typeof input.blur === 'function') {
+                    input.blur();
+                }
+            } catch (error) {
+                console.warn('Failed to blur editor', error);
+            }
+        }
+
+        function requestCommandPaletteFocus() {
+            blurEditor();
+            hostBridge.notify({ type: 'focus-command-palette' });
+        }
+
         function handleHostMessage(rawMessage) {
             let payload;
             try {
@@ -286,6 +310,10 @@
                 }
                 case 'set-playback': {
                     setPlaybackState(Boolean(payload.paused));
+                    break;
+                }
+                case 'blur-editor': {
+                    blurEditor();
                     break;
                 }
                 case 'load-video': {
@@ -526,6 +554,10 @@
                 completeSingle: false
             },
             autofocus: true
+        });
+
+        editor.on('focus', () => {
+            hostBridge.notify({ type: 'editor-focus' });
         });
 
         editor.setValue('// Start coding here...');

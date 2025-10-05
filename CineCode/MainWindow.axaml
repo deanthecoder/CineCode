@@ -12,8 +12,8 @@
         <!-- Toolbar -->
         <Grid Grid.Row="0" Margin="10">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
 
             <!-- Left controls -->
@@ -33,15 +33,28 @@
                 <TextBlock Text="Editor Opacity" VerticalAlignment="Center"/>
             </StackPanel>
 
-            <!-- Right controls -->
-            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+            <!-- Center command box -->
+            <StackPanel Grid.ColumnSpan="2"
+                        Orientation="Horizontal"
+                        Spacing="8"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center">
                 <TextBox Name="YouTubeIdTextBox"
-                         Width="160"
-                         Watermark="YouTube ID"
-                         KeyDown="YouTubeIdTextBox_KeyDown"/>
+                         Width="240"
+                         Watermark="> command or YouTube ID"
+                         KeyDown="YouTubeIdTextBox_KeyDown"
+                         GotFocus="YouTubeIdTextBox_GotFocus"/>
                 <Button Name="LoadVideoButton" Click="LoadVideoButton_Click" ToolTip.Tip="Load Video">
                     <materialIcons:MaterialIcon Kind="DownloadOutline" Width="20" Height="20"/>
                 </Button>
+            </StackPanel>
+
+            <!-- Right controls -->
+            <StackPanel Grid.Column="1"
+                        Orientation="Horizontal"
+                        Spacing="8"
+                        VerticalAlignment="Center"
+                        HorizontalAlignment="Right">
                 <Button Name="RewindButton" Click="RewindButton_Click" ToolTip.Tip="Replay 10s">
                     <materialIcons:MaterialIcon Kind="Rewind10" Width="22" Height="22"/>
                 </Button>

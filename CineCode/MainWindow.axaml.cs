@@ -37,9 +37,11 @@ public partial class MainWindow : Window
     private double m_currentVolume;
     private double? m_pendingVolume;
     private bool m_suppressVolumeChange;
+    private readonly Dictionary<string, Func<string, Task>> m_commandHandlers;
     
     public MainWindow()
     {
+        m_commandHandlers = CreateCommandHandlers();
         InitializeComponent();
         InitializeWebView();
         SetupEventHandlers();
@@ -68,6 +70,20 @@ public partial class MainWindow : Window
         UpdateVolumeIcon();
         UpdatePlayPauseIcon();
         SetLoadVideoButtonTooltip(DefaultLoadVideoTooltip);
+    }
+
+    private Dictionary<string, Func<string, Task>> CreateCommandHandlers()
+    {
+        return new Dictionary<string, Func<string, Task>>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["open"] = _ => OpenFileAsync(),
+            ["save"] = _ => SaveFileAsync(),
+            ["exit"] = _ =>
+            {
+                RequestApplicationQuit();
+                return Task.CompletedTask;
+            }
+        };
     }
 
     private void InitializeWebView()
@@ -156,6 +172,12 @@ public partial class MainWindow : Window
                         : null;
                     m_pendingContentRequest?.TrySetResult(content);
                     m_pendingContentRequest = null;
+                    break;
+                case "focus-command-palette":
+                    FocusCommandPalette();
+                    break;
+                case "editor-focus":
+                    HandleEditorFocus();
                     break;
                 case "log":
                     if (document.RootElement.TryGetProperty("message", out var messageElement))
@@ -393,11 +415,26 @@ public partial class MainWindow : Window
         TryLoadVideoFromInput();
     }
 
-    private void YouTubeIdTextBox_KeyDown(object? sender, KeyEventArgs e)
+    private async void YouTubeIdTextBox_KeyDown(object? sender, KeyEventArgs e)
     {
         if (e.Key == Key.Enter || e.Key == Key.Return)
         {
             e.Handled = true;
+            var input = YouTubeIdTextBox.Text ?? string.Empty;
+
+            var commandResult = await TryExecuteCommandAsync(input);
+            if (commandResult == CommandExecutionResult.Executed)
+            {
+                YouTubeIdTextBox.Text = string.Empty;
+                SetLoadVideoButtonTooltip(DefaultLoadVideoTooltip);
+                return;
+            }
+
+            if (commandResult == CommandExecutionResult.UnknownCommand)
+            {
+                return;
+            }
+
             TryLoadVideoFromInput();
         }
     }
@@ -788,6 +825,11 @@ public partial class MainWindow : Window
 
     private async void SaveFile_Click(object? sender, RoutedEventArgs e)
     {
+        await SaveFileAsync();
+    }
+
+    private async Task SaveFileAsync()
+    {
         if (string.IsNullOrEmpty(m_currentFilePath))
         {
             var topLevel = GetTopLevel(this);
@@ -840,6 +882,123 @@ public partial class MainWindow : Window
             Console.WriteLine("Timed out waiting for editor content.");
             m_pendingContentRequest = null;
         }
+    }
+
+    private async Task<CommandExecutionResult> TryExecuteCommandAsync(string rawInput)
+    {
+        if (!TryParseCommand(rawInput, out var commandName, out var argument))
+        {
+            return CommandExecutionResult.NotHandled;
+        }
+
+        if (!m_commandHandlers.TryGetValue(commandName, out var handler))
+        {
+            SetLoadVideoButtonTooltip($"Unknown command: {commandName}");
+            return CommandExecutionResult.UnknownCommand;
+        }
+
+        await handler(argument);
+        return CommandExecutionResult.Executed;
+    }
+
+    private bool TryParseCommand(string rawInput, out string commandName, out string argument)
+    {
+        commandName = string.Empty;
+        argument = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(rawInput))
+        {
+            return false;
+        }
+
+        var trimmed = rawInput.Trim();
+        var explicitCommand = trimmed.StartsWith(">", StringComparison.Ordinal);
+
+        if (explicitCommand)
+        {
+            trimmed = trimmed[1..].TrimStart();
+            if (string.IsNullOrEmpty(trimmed))
+            {
+                return false;
+            }
+        }
+
+        var parts = trimmed.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 0)
+        {
+            return false;
+        }
+
+        commandName = parts[0];
+        argument = parts.Length > 1 ? parts[1].Trim() : string.Empty;
+
+        if (explicitCommand)
+        {
+            return true;
+        }
+
+        return m_commandHandlers.ContainsKey(commandName);
+    }
+
+    private enum CommandExecutionResult
+    {
+        NotHandled,
+        Executed,
+        UnknownCommand
+    }
+
+    private void FocusCommandPalette()
+    {
+        if (YouTubeIdTextBox is null)
+        {
+            return;
+        }
+
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (YouTubeIdTextBox.IsVisible)
+            {
+                YouTubeIdTextBox.Focus();
+                YouTubeIdTextBox.SelectAll();
+                if (m_isEditorReady)
+                {
+                    SendWebViewMessage(new { type = "blur-editor" });
+                }
+            }
+        }, DispatcherPriority.Input);
+    }
+
+    private void HandleEditorFocus()
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (YouTubeIdTextBox is { } textBox)
+            {
+                var collapseIndex = textBox.Text?.Length ?? 0;
+                textBox.SelectionStart = collapseIndex;
+                textBox.SelectionEnd = collapseIndex;
+                textBox.CaretIndex = collapseIndex;
+
+                if (textBox.IsFocused)
+                {
+                    textBox.IsEnabled = false;
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        textBox.IsEnabled = true;
+                    }, DispatcherPriority.Background);
+                }
+            }
+
+            WebViewControl.Focus();
+        }, DispatcherPriority.Input);
+    }
+
+    private void YouTubeIdTextBox_GotFocus(object? sender, GotFocusEventArgs e)
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            YouTubeIdTextBox?.SelectAll();
+        }, DispatcherPriority.Input);
     }
 
     private void RequestApplicationQuit()
