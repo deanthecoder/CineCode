@@ -42,4 +42,7 @@
       <GeneratorSecurityMode>FullTrust</GeneratorSecurityMode>
     </None>
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\DTC.Core\DTC.Core\DTC.Core.csproj" />
+  </ItemGroup>
 </Project>

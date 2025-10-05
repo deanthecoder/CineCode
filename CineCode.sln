@@ -2,6 +2,8 @@
 Microsoft Visual Studio Solution File, Format Version 12.00
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CineCode", "CineCode\CineCode.csproj", "{5A458DCA-5F2D-48F0-A3C4-4B448B779D14}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DTC.Core", "DTC.Core\DTC.Core\DTC.Core.csproj", "{95B1992C-74A8-4780-A2D2-70EB1849C76A}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -12,5 +14,9 @@ Global
 		{5A458DCA-5F2D-48F0-A3C4-4B448B779D14}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{5A458DCA-5F2D-48F0-A3C4-4B448B779D14}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{5A458DCA-5F2D-48F0-A3C4-4B448B779D14}.Release|Any CPU.Build.0 = Release|Any CPU
+		{95B1992C-74A8-4780-A2D2-70EB1849C76A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{95B1992C-74A8-4780-A2D2-70EB1849C76A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{95B1992C-74A8-4780-A2D2-70EB1849C76A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{95B1992C-74A8-4780-A2D2-70EB1849C76A}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal
