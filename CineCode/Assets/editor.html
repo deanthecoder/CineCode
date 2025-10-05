@@ -120,6 +120,7 @@
     <script>
         const DEFAULT_VIDEO_ID = 'eYhP50P31h4';
         const DIM_MULTIPLIER = 0.5;
+        const EDITOR_DIM_OPACITY = 0.22;
         const IDLE_DELAY_MS = 8000;
 
         let editor;
@@ -574,6 +575,12 @@
         function setEditorOpacity(opacity) {
             const editorElement = document.querySelector('.CodeMirror');
             const gutters = document.querySelector('.CodeMirror-gutters');
+            const editorContainer = document.getElementById('editor-container');
+
+            if (editorContainer) {
+                const targetOpacity = isDimmed ? EDITOR_DIM_OPACITY : 1;
+                editorContainer.style.opacity = String(targetOpacity);
+            }
 
             if (editorElement) {
                 editorElement.style.setProperty('background', `rgba(39, 40, 34, ${opacity})`, 'important');
