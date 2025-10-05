@@ -28,10 +28,17 @@ public class Settings : UserSettingsBase
         get => Get<double>();
         set => Set(value);
     }
+
+    public string YouTubeVideoId
+    {
+        get => Get<string>();
+        set => Set(value);
+    }
     
     protected override void ApplyDefaults()
     {
         MruFiles = [];
         Opacity = 0.85;
+        YouTubeVideoId = "eYhP50P31h4";
     }
 }

@@ -29,7 +29,7 @@ public partial class MainWindow : Window
     private TaskCompletionSource<string?>? m_pendingContentRequest;
     private (string content, string extension)? m_pendingFile;
     private bool m_isPlaybackPaused;
-    private string m_currentVideoId = "eYhP50P31h4";
+    private string m_currentVideoId = string.Empty;
     private double m_currentVolume = 0.5;
     private double? m_pendingVolume;
     private bool m_suppressVolumeChange;
@@ -44,8 +44,20 @@ public partial class MainWindow : Window
         var savedOpacity = Math.Clamp(Settings.Instance.Opacity, OpacitySlider.Minimum, OpacitySlider.Maximum);
         OpacitySlider.Value = savedOpacity;
         m_suppressOpacityUpdate = false;
-        m_currentVideoId = NormalizeVideoId(YouTubeIdTextBox.Text ?? m_currentVideoId);
+        var savedVideoId = NormalizeVideoId(Settings.Instance.YouTubeVideoId ?? string.Empty);
+        if (string.IsNullOrWhiteSpace(savedVideoId))
+        {
+            savedVideoId = NormalizeVideoId(YouTubeIdTextBox.Text ?? string.Empty);
+        }
+
+        if (string.IsNullOrWhiteSpace(savedVideoId))
+        {
+            savedVideoId = NormalizeVideoId("eYhP50P31h4");
+        }
+
+        m_currentVideoId = savedVideoId;
         YouTubeIdTextBox.Text = m_currentVideoId;
+        Settings.Instance.YouTubeVideoId = m_currentVideoId;
         m_suppressVolumeChange = true;
         VolumeSlider.Value = m_currentVolume;
         m_suppressVolumeChange = false;
@@ -364,6 +376,7 @@ public partial class MainWindow : Window
 
         m_currentVideoId = normalized;
         YouTubeIdTextBox.Text = m_currentVideoId;
+        Settings.Instance.YouTubeVideoId = m_currentVideoId;
         SendWebViewMessage(new
         {
             type = "load-video",
