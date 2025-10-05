@@ -9,6 +9,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/monokai.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/dialog/dialog.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/show-hint.min.css">
     
     <style>
         * {
@@ -113,6 +114,8 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/search/searchcursor.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/search/search.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/dialog/dialog.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/show-hint.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/anyword-hint.min.js"></script>
     
     <!-- YouTube IFrame API -->
     <script src="https://www.youtube.com/iframe_api"></script>
@@ -462,6 +465,7 @@
             extraKeys: {
                 Tab: cm => cm.replaceSelection('    ', 'end'),
                 'Shift-Tab': cm => cm.indentSelection('subtract'),
+                'Ctrl-Space': 'autocomplete',
                 'Ctrl-F': cm => cm.execCommand('find'),
                 'Cmd-F': cm => cm.execCommand('find'),
                 'Ctrl-G': cm => cm.execCommand('findNext'),
@@ -472,6 +476,10 @@
                 'Cmd-H': cm => cm.execCommand('replace'),
                 'Shift-Ctrl-H': cm => cm.execCommand('replaceAll'),
                 'Shift-Cmd-H': cm => cm.execCommand('replaceAll')
+            },
+            hintOptions: {
+                hint: CodeMirror.hint.anyword,
+                completeSingle: false
             },
             autofocus: true
         });
