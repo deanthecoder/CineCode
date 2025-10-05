@@ -29,6 +29,12 @@ public class Settings : UserSettingsBase
         set => Set(value);
     }
 
+    public double Volume
+    {
+        get => Get<double>();
+        set => Set(value);
+    }
+
     public string YouTubeVideoId
     {
         get => Get<string>();
@@ -39,6 +45,7 @@ public class Settings : UserSettingsBase
     {
         MruFiles = [];
         Opacity = 0.85;
+        Volume = 0.5;
         YouTubeVideoId = "eYhP50P31h4";
     }
 }

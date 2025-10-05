@@ -63,6 +63,8 @@ public partial class MainWindow : Window
         m_currentVideoId = savedVideoId;
         YouTubeIdTextBox.Text = m_currentVideoId;
         Settings.Instance.YouTubeVideoId = m_currentVideoId;
+        var savedVolume = Math.Clamp(Settings.Instance.Volume, VolumeSlider.Minimum, VolumeSlider.Maximum);
+        m_currentVolume = savedVolume;
         m_suppressVolumeChange = true;
         VolumeSlider.Value = m_currentVolume;
         m_suppressVolumeChange = false;
@@ -576,6 +578,7 @@ public partial class MainWindow : Window
         }
 
         m_currentVolume = Math.Clamp(e.NewValue, 0, 1);
+        Settings.Instance.Volume = m_currentVolume;
         ApplyVolumeToWebView();
     }
 
