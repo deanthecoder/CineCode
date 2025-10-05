@@ -1,15 +1,22 @@
 [![Twitter URL](https://img.shields.io/twitter/url/https/twitter.com/deanthecoder.svg?style=social&label=Follow%20%40deanthecoder)](https://twitter.com/deanthecoder)
 
-![CineCode Logo](img/CineCode.png)
+<p align="center">
+  <img src="img/CineCode.png" alt="CineCode Logo">
+</p>
 
 # CineCode
 A cinematic coding app — code while you watch. Press play, then type.
+
+<p align="center">
+  <img src="img/Screenshot.png" alt="CineCode Screenshot">
+</p>
 
 ## About
 CineCode is a environment designed to blend productivity with entertainment. Watch your favorite videos while coding, and let the cinematic experience inspire your workflow.
 
 ## Features
 - Play/pause video while coding
+- Support for both playlist and video IDs
 - Adjustable video overlay and transparency
 - Minimal, distraction-free UI
 

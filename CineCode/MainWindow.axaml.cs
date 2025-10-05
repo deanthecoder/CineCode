@@ -33,7 +33,7 @@ public partial class MainWindow : Window
     private TaskCompletionSource<string?>? m_pendingContentRequest;
     private (string content, string extension)? m_pendingFile;
     private bool m_isPlaybackPaused;
-    private string m_currentVideoId;
+    private string m_currentMediaId;
     private double m_currentVolume;
     private double? m_pendingVolume;
     private bool m_suppressVolumeChange;
@@ -48,20 +48,18 @@ public partial class MainWindow : Window
         var savedOpacity = Math.Clamp(Settings.Instance.Opacity, OpacitySlider.Minimum, OpacitySlider.Maximum);
         OpacitySlider.Value = savedOpacity;
         m_suppressOpacityUpdate = false;
-        var savedVideoId = NormalizeVideoId(Settings.Instance.YouTubeVideoId);
-        if (string.IsNullOrWhiteSpace(savedVideoId))
+        var savedMediaId = NormalizeMediaId(Settings.Instance.YouTubeVideoId);
+        if (string.IsNullOrWhiteSpace(savedMediaId))
         {
-            savedVideoId = NormalizeVideoId(YouTubeIdTextBox.Text ?? string.Empty);
+            savedMediaId = NormalizeMediaId(YouTubeIdTextBox.Text ?? string.Empty);
         }
-
-        if (string.IsNullOrWhiteSpace(savedVideoId))
+        if (string.IsNullOrWhiteSpace(savedMediaId))
         {
-            savedVideoId = NormalizeVideoId("eYhP50P31h4");
+            savedMediaId = NormalizeMediaId("eYhP50P31h4");
         }
-
-        m_currentVideoId = savedVideoId;
-        YouTubeIdTextBox.Text = m_currentVideoId;
-        Settings.Instance.YouTubeVideoId = m_currentVideoId;
+        m_currentMediaId = savedMediaId;
+        YouTubeIdTextBox.Text = m_currentMediaId;
+        Settings.Instance.YouTubeVideoId = m_currentMediaId;
         var savedVolume = Math.Clamp(Settings.Instance.Volume, VolumeSlider.Minimum, VolumeSlider.Maximum);
         m_currentVolume = savedVolume;
         m_suppressVolumeChange = true;
@@ -235,7 +233,7 @@ public partial class MainWindow : Window
         SendWebViewMessage(new
         {
             type = "load-video",
-            videoId = m_currentVideoId,
+            videoId = m_currentMediaId,
             autoplay = true
         });
         m_isPlaybackPaused = false;
@@ -413,16 +411,16 @@ public partial class MainWindow : Window
             return false;
         }
 
-        var normalized = NormalizeVideoId(rawId);
+        var normalized = NormalizeMediaId(rawId);
         if (string.IsNullOrWhiteSpace(normalized))
         {
             SetLoadVideoButtonTooltip(InvalidVideoTooltip);
             return false;
         }
 
-        m_currentVideoId = normalized;
-        YouTubeIdTextBox.Text = m_currentVideoId;
-        Settings.Instance.YouTubeVideoId = m_currentVideoId;
+        m_currentMediaId = normalized;
+        YouTubeIdTextBox.Text = m_currentMediaId;
+        Settings.Instance.YouTubeVideoId = m_currentMediaId;
 
         m_isPlaybackPaused = false;
         UpdatePlayPauseIcon();
@@ -433,7 +431,7 @@ public partial class MainWindow : Window
             SendWebViewMessage(new
             {
                 type = "load-video",
-                videoId = m_currentVideoId,
+                videoId = m_currentMediaId,
                 autoplay = true
             });
             TryEnableThirdPartyCookies();
@@ -443,7 +441,17 @@ public partial class MainWindow : Window
         return true;
     }
 
-    private static string NormalizeVideoId(string input)
+    private static bool IsPlaylistId(string s)
+    {
+        if (string.IsNullOrWhiteSpace(s))
+            return false;
+        // Common playlist/feed prefixes: PL (playlist), UU (uploads), OL (mixes/other lists)
+        return s.StartsWith("PL", StringComparison.OrdinalIgnoreCase)
+            || s.StartsWith("UU", StringComparison.OrdinalIgnoreCase)
+            || s.StartsWith("OL", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string NormalizeMediaId(string input)
     {
         if (string.IsNullOrWhiteSpace(input))
         {
@@ -458,50 +466,63 @@ public partial class MainWindow : Window
             if (host.EndsWith("youtu.be", StringComparison.OrdinalIgnoreCase))
             {
                 var path = uri.AbsolutePath.Trim('/');
-                return SanitizeVideoId(path);
+                return SanitizeId(path);
             }
 
             if (host.Contains("youtube.com", StringComparison.OrdinalIgnoreCase))
             {
-                var queryId = TryGetQueryParameter(uri.Query, "v");
-                if (!string.IsNullOrWhiteSpace(queryId))
+                // Prefer playlist if present
+                var list = TryGetQueryParameter(uri.Query, "list");
+                if (!string.IsNullOrWhiteSpace(list))
                 {
-                    return SanitizeVideoId(queryId);
+                    return SanitizeId(list);
+                }
+
+                var vid = TryGetQueryParameter(uri.Query, "v");
+                if (!string.IsNullOrWhiteSpace(vid))
+                {
+                    return SanitizeId(vid);
                 }
 
                 var segments = uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
                 if (segments.Length >= 2)
                 {
-                    if (string.Equals(segments[0], "embed", StringComparison.OrdinalIgnoreCase) ||
-                        string.Equals(segments[0], "shorts", StringComparison.OrdinalIgnoreCase))
+                    if (string.Equals(segments[0], "embed", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(segments[0], "shorts", StringComparison.OrdinalIgnoreCase))
                     {
-                        return SanitizeVideoId(segments[1]);
+                        return SanitizeId(segments[1]);
                     }
                 }
             }
         }
 
-        return SanitizeVideoId(trimmed);
+        return SanitizeId(trimmed);
     }
 
-    private static string SanitizeVideoId(string? input)
+    private static string SanitizeId(string? input)
     {
         if (string.IsNullOrWhiteSpace(input))
         {
             return string.Empty;
         }
 
+        // Keep only ID-safe chars
         return new string(input.Where(ch => char.IsLetterOrDigit(ch) || ch is '-' or '_').ToArray());
     }
 
     private void HandleVideoMetadata(JsonElement element)
     {
         var incomingId = element.TryGetProperty("videoId", out var videoIdElement)
-            ? NormalizeVideoId(videoIdElement.GetString() ?? string.Empty)
+            ? NormalizeMediaId(videoIdElement.GetString() ?? string.Empty)
             : string.Empty;
 
-        if (!string.IsNullOrWhiteSpace(incomingId) &&
-            !string.Equals(incomingId, m_currentVideoId, StringComparison.Ordinal))
+        var currentId = NormalizeMediaId(m_currentMediaId);
+        var currentIsPlaylist = IsPlaylistId(currentId);
+
+        // If we're on a playlist, accept the metadata of the currently playing item.
+        // If we're on a single video, ensure IDs match.
+        if (!currentIsPlaylist && !string.IsNullOrWhiteSpace(incomingId)
+            && !string.Equals(incomingId, currentId, StringComparison.Ordinal))
         {
             return;
         }

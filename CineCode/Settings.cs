@@ -46,6 +46,6 @@ public class Settings : UserSettingsBase
         MruFiles = [];
         Opacity = 0.85;
         Volume = 0.5;
-        YouTubeVideoId = "dELVWkE5WnE";
+        YouTubeVideoId = "PLyPEwZQPST3okfxneqOAKsz2kYVMbLWlI";
     }
 }
