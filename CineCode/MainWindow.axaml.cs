@@ -84,7 +84,13 @@ public partial class MainWindow : Window
     {
         if (!context.IsArgument)
         {
-            var query = context.Query;
+            var query = context.Query ?? string.Empty;
+
+            if (query.IndexOf('?', StringComparison.Ordinal) >= 0)
+            {
+                return m_commandNames.ToList();
+            }
+
             var matches = m_commandNames
                 .Where(name => name.StartsWith(query, StringComparison.OrdinalIgnoreCase))
                 .ToList();
