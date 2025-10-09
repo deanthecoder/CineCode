@@ -10,12 +10,19 @@
         Height="360"
         CanResize="False"
         WindowStartupLocation="CenterOwner">
-    <Grid RowDefinitions="Auto,*,Auto" Margin="16">
+    <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="16">
         <TextBlock Grid.Row="0"
                    Text="Select a recently opened file"
-                   Margin="0,0,0,12"/>
+                   Margin="0,0,0,8"/>
 
-        <ListBox Grid.Row="1"
+        <TextBox Grid.Row="1"
+                 x:Name="FilterTextBox"
+                 Watermark="Type to filter"
+                 TextChanged="FilterTextBox_TextChanged"
+                 KeyDown="FilterTextBox_KeyDown"
+                 Margin="0,0,0,12"/>
+
+        <ListBox Grid.Row="2"
                  x:Name="RecentFilesList"
                  DoubleTapped="RecentFilesList_DoubleTapped"
                  KeyDown="RecentFilesList_KeyDown"
@@ -32,7 +39,7 @@
             </ListBox.ItemTemplate>
         </ListBox>
 
-        <StackPanel Grid.Row="2"
+        <StackPanel Grid.Row="3"
                     Orientation="Horizontal"
                     HorizontalAlignment="Right"
                     Spacing="8"
