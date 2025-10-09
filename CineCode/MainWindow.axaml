@@ -42,7 +42,7 @@
                 <Grid>
                     <TextBox Name="YouTubeIdTextBox"
                              Width="240"
-                             Watermark="> command or YouTube ID"
+                             Watermark=">command, YouTube ID, or ?"
                              KeyDown="YouTubeIdTextBox_KeyDown"
                              GotFocus="YouTubeIdTextBox_GotFocus"
                              LostFocus="YouTubeIdTextBox_LostFocus"

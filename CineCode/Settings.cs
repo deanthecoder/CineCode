@@ -15,11 +15,27 @@ namespace CineCode;
 
 public class Settings : UserSettingsBase
 {
+    internal const string DefaultYouTubeVideoId = "PLyPEwZQPST3okfxneqOAKsz2kYVMbLWlI";
     public static Settings Instance { get; } = new Settings();
 
     public List<string> MruFiles
     {
         get => Get<List<string>>();
+        set => Set(value);
+    }
+
+    public List<string> RecentYouTubeItems
+    {
+        get
+        {
+            var value = Get<List<string>>();
+            if (value is null)
+            {
+                value = [];
+                Set(value);
+            }
+            return value;
+        }
         set => Set(value);
     }
 
@@ -44,8 +60,9 @@ public class Settings : UserSettingsBase
     protected override void ApplyDefaults()
     {
         MruFiles = [];
+        RecentYouTubeItems = [];
         Opacity = 0.85;
         Volume = 0.5;
-        YouTubeVideoId = "PLyPEwZQPST3okfxneqOAKsz2kYVMbLWlI";
+        YouTubeVideoId = DefaultYouTubeVideoId;
     }
 }

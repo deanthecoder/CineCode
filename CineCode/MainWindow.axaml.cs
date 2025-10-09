@@ -23,6 +23,7 @@ namespace CineCode;
 public partial class MainWindow : Window
 {
     private const int MaxMruEntries = 50;
+    private const int MaxRecentMediaEntries = 25;
     private const string DefaultLoadVideoTooltip = "Load Video";
     private const string InvalidVideoTooltip = "Enter a valid YouTube URL or ID.";
     private const string LoadingVideoTooltip = "Loading video...";
@@ -54,19 +55,17 @@ public partial class MainWindow : Window
         InitializeWebView();
         SetupEventHandlers();
         TrimMruList();
+        TrimRecentMediaList();
         m_suppressOpacityUpdate = true;
         var savedOpacity = Math.Clamp(Settings.Instance.Opacity, OpacitySlider.Minimum, OpacitySlider.Maximum);
         OpacitySlider.Value = savedOpacity;
         m_suppressOpacityUpdate = false;
         var savedMediaId = NormalizeMediaId(Settings.Instance.YouTubeVideoId);
         if (string.IsNullOrWhiteSpace(savedMediaId))
-        {
             savedMediaId = NormalizeMediaId(YouTubeIdTextBox.Text ?? string.Empty);
-        }
         if (string.IsNullOrWhiteSpace(savedMediaId))
-        {
-            savedMediaId = NormalizeMediaId("eYhP50P31h4");
-        }
+            savedMediaId = NormalizeMediaId(Settings.DefaultYouTubeVideoId);
+        
         m_currentMediaId = savedMediaId;
         YouTubeIdTextBox.Text = m_currentMediaId;
         Settings.Instance.YouTubeVideoId = m_currentMediaId;
@@ -84,7 +83,7 @@ public partial class MainWindow : Window
     {
         if (!context.IsArgument)
         {
-            var query = context.Query ?? string.Empty;
+            var query = context.Query;
 
             if (query.IndexOf('?', StringComparison.Ordinal) >= 0)
             {
@@ -126,6 +125,7 @@ public partial class MainWindow : Window
         {
             ["open"] = HandleOpenCommandAsync,
             ["open recent"] = _ => HandleOpenCommandAsync("recent"),
+            ["play recent"] = _ => HandlePlayRecentCommandAsync(),
             ["save"] = _ => SaveFileAsync(),
             ["exit"] = _ =>
             {
@@ -436,6 +436,33 @@ public partial class MainWindow : Window
         await LoadFileFromPathAsync(selectedPath);
     }
 
+    private async Task HandlePlayRecentCommandAsync()
+    {
+        TrimRecentMediaList();
+        var recentMedia = Settings.Instance.RecentYouTubeItems;
+
+        if (recentMedia.Count == 0)
+        {
+            SetLoadVideoButtonTooltip("No recent videos found.");
+            return;
+        }
+
+        if (!IsActive)
+        {
+            Activate();
+        }
+
+        var dialog = new RecentMediaDialog(recentMedia);
+        var selection = await dialog.ShowDialog<RecentMediaItem?>(this);
+
+        if (selection is null || string.IsNullOrWhiteSpace(selection.MediaId))
+        {
+            return;
+        }
+
+        LoadMedia(selection.MediaId, selection.DisplayName);
+    }
+
     private async Task LoadFileFromPathAsync(string path)
     {
         try
@@ -632,22 +659,34 @@ public partial class MainWindow : Window
     private void TryLoadVideoFromInput()
     {
         var rawId = YouTubeIdTextBox.Text ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(rawId))
+        LoadMedia(rawId);
+    }
+
+    private void LoadMedia(string mediaId, string? displayName = null)
+    {
+        if (string.IsNullOrWhiteSpace(mediaId))
         {
             SetLoadVideoButtonTooltip(InvalidVideoTooltip);
             return;
         }
 
-        var normalized = NormalizeMediaId(rawId);
-        if (string.IsNullOrWhiteSpace(normalized))
+        var normalizedId = NormalizeMediaId(mediaId);
+        if (string.IsNullOrWhiteSpace(normalizedId))
         {
             SetLoadVideoButtonTooltip(InvalidVideoTooltip);
             return;
         }
 
-        m_currentMediaId = normalized;
-        YouTubeIdTextBox.Text = m_currentMediaId;
+        m_currentMediaId = normalizedId;
+
+        if (YouTubeIdTextBox is { } textBox)
+        {
+            textBox.Text = m_currentMediaId;
+        }
+
         Settings.Instance.YouTubeVideoId = m_currentMediaId;
+
+        UpdateRecentMediaList(m_currentMediaId, displayName);
 
         m_isPlaybackPaused = false;
         UpdatePlayPauseIcon();
@@ -757,8 +796,25 @@ public partial class MainWindow : Window
             ? titleElement.GetString() ?? string.Empty
             : string.Empty;
 
+        var targetId = currentIsPlaylist ? currentId : incomingId;
+        if (string.IsNullOrWhiteSpace(targetId))
+        {
+            targetId = currentId;
+        }
+
+        if (!string.IsNullOrWhiteSpace(targetId))
+        {
+            var displayName = !string.IsNullOrWhiteSpace(title)
+                ? currentIsPlaylist ? $"{title} (playlist)" : title
+                : null;
+
+            UpdateRecentMediaList(targetId, displayName);
+        }
+
         if (!string.IsNullOrWhiteSpace(title))
+        {
             SetLoadVideoButtonTooltip($"Video: {title}");
+        }
     }
 
     private void SetLoadVideoButtonTooltip(string? message)
@@ -914,6 +970,123 @@ public partial class MainWindow : Window
         }
     }
 
+
+    private static void TrimRecentMediaList()
+    {
+        var entries = Settings.Instance.RecentYouTubeItems;
+        if (entries.Count == 0)
+        {
+            return;
+        }
+
+        var trimmed = new List<string>(MaxRecentMediaEntries);
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var entry in entries)
+        {
+            if (!TryParseRecentMediaEntry(entry, out var mediaId, out var displayName))
+            {
+                continue;
+            }
+
+            var normalizedId = NormalizeMediaId(mediaId);
+            if (string.IsNullOrWhiteSpace(normalizedId) || !seen.Add(normalizedId))
+            {
+                continue;
+            }
+
+            var friendlyName = SanitizeDisplayName(displayName, normalizedId);
+            trimmed.Add($"{normalizedId}|{friendlyName}");
+
+            if (trimmed.Count >= MaxRecentMediaEntries)
+            {
+                break;
+            }
+        }
+
+        if (!entries.SequenceEqual(trimmed, StringComparer.Ordinal))
+        {
+            Settings.Instance.RecentYouTubeItems = trimmed;
+        }
+    }
+
+    private static void UpdateRecentMediaList(string mediaId, string? displayName)
+    {
+        var normalizedId = NormalizeMediaId(mediaId);
+        if (string.IsNullOrWhiteSpace(normalizedId))
+        {
+            return;
+        }
+
+        var list = new List<string>(Settings.Instance.RecentYouTubeItems);
+
+        list.RemoveAll(entry =>
+        {
+            if (!TryParseRecentMediaEntry(entry, out var entryId, out _))
+            {
+                return false;
+            }
+
+            var normalizedEntryId = NormalizeMediaId(entryId);
+            return !string.IsNullOrWhiteSpace(normalizedEntryId)
+                && string.Equals(normalizedEntryId, normalizedId, StringComparison.OrdinalIgnoreCase);
+        });
+
+        var friendlyName = SanitizeDisplayName(displayName, normalizedId);
+        list.Insert(0, $"{normalizedId}|{friendlyName}");
+
+        if (list.Count > MaxRecentMediaEntries)
+        {
+            list = list.Take(MaxRecentMediaEntries).ToList();
+        }
+
+        Settings.Instance.RecentYouTubeItems = list;
+    }
+
+    private static bool TryParseRecentMediaEntry(string? entry, out string mediaId, out string displayName)
+    {
+        mediaId = string.Empty;
+        displayName = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(entry))
+        {
+            return false;
+        }
+
+        var separator = entry.IndexOf('|');
+        if (separator < 0)
+        {
+            mediaId = entry.Trim();
+            displayName = mediaId;
+            return !string.IsNullOrWhiteSpace(mediaId);
+        }
+
+        mediaId = entry[..separator].Trim();
+        displayName = entry[(separator + 1)..].Trim();
+        return !string.IsNullOrWhiteSpace(mediaId);
+    }
+
+    private static string SanitizeDisplayName(string? displayName, string fallbackId)
+    {
+        var sanitized = (displayName ?? string.Empty)
+            .ReplaceLineEndings(" ")
+            .Replace('|', ' ')
+            .Trim();
+
+        if (string.IsNullOrWhiteSpace(sanitized))
+        {
+            return GetDefaultDisplayName(fallbackId);
+        }
+
+        return sanitized;
+    }
+
+    private static string GetDefaultDisplayName(string mediaId)
+    {
+        return IsPlaylistId(mediaId)
+            ? $"{mediaId} (playlist)"
+            : mediaId;
+    }
 
     private static void TrimMruList()
     {
