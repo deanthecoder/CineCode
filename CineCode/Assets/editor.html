@@ -125,6 +125,7 @@
         const DIM_MULTIPLIER = 0.5;
         const EDITOR_DIM_OPACITY = 0.22;
         const IDLE_DELAY_MS = 8000;
+        const POINTER_ACTIVITY_THROTTLE_MS = 250;
 
         let editor;
         let player;
@@ -138,6 +139,8 @@
         let metadataUpdateTimer = null;
         let lastVideoMetadata = { id: '', title: '' };
         let metadataRetryCount = 0;
+        let lastReportedDimState = false;
+        let lastMouseMoveTimestamp = 0;
         // Parse a YouTube input as video or playlist (id or URL)
         function parseYouTubeInput(input) {
             var s = (input || '').trim();
@@ -341,6 +344,10 @@
                         const target = Math.max(0, current + offset);
                         player.seekTo(target, true);
                     }
+                    break;
+                }
+                case 'host-activity': {
+                    handleEditorActivity();
                     break;
                 }
                 case 'paste-content': {
@@ -684,19 +691,37 @@
             idleTimer = setTimeout(() => {
                 isDimmed = true;
                 applyCurrentOpacity();
+                notifyDimState(true);
             }, IDLE_DELAY_MS);
         }
 
         function handleEditorActivity() {
+            const wasDimmed = isDimmed;
+
             if (isDimmed) {
                 isDimmed = false;
                 applyCurrentOpacity();
+            }
+
+            if (wasDimmed) {
+                notifyDimState(false);
             }
 
             resetIdleTimer();
         }
 
         resetIdleTimer();
+        document.addEventListener('mousemove', onDocumentMouseMove, { passive: true });
+
+        function onDocumentMouseMove() {
+            const now = Date.now();
+            if (!isDimmed && (now - lastMouseMoveTimestamp) < POINTER_ACTIVITY_THROTTLE_MS) {
+                return;
+            }
+
+            lastMouseMoveTimestamp = now;
+            handleEditorActivity();
+        }
 
         function loadCode(content, extension) {
             editor.setValue(content);
@@ -740,6 +765,15 @@
             if (gutters) {
                 gutters.style.setProperty('background', `rgba(39, 40, 34, ${Math.min(opacity + 0.05, 1.0)})`, 'important');
             }
+        }
+
+        function notifyDimState(dimmed) {
+            if (lastReportedDimState === dimmed) {
+                return;
+            }
+
+            lastReportedDimState = dimmed;
+            hostBridge.notify({ type: 'editor-dimmed', dimmed });
         }
 
         function applyVolume() {

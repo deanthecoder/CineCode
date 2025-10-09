@@ -27,6 +27,9 @@ public partial class MainWindow : Window
     private const string DefaultLoadVideoTooltip = "Load Video";
     private const string InvalidVideoTooltip = "Enter a valid YouTube URL or ID.";
     private const string LoadingVideoTooltip = "Loading video...";
+    private const double ToolbarActiveOpacity = 1.0;
+    private const double ToolbarDimmedOpacity = 0.35;
+    private static readonly TimeSpan HostActivityThrottle = TimeSpan.FromMilliseconds(200);
 
     private string m_currentFilePath = string.Empty;
     private bool m_isEditorReady;
@@ -43,6 +46,9 @@ public partial class MainWindow : Window
     private readonly List<string> m_commandNames;
     private readonly Dictionary<string, IReadOnlyList<string>> m_commandArgumentOptions;
     private bool m_suppressCommandSuggestionUpdate;
+    private bool m_isToolbarDimmed;
+    private bool m_isEditorDimmed;
+    private DateTime m_lastHostActivitySent = DateTime.MinValue;
     
     public MainWindow()
     {
@@ -77,6 +83,9 @@ public partial class MainWindow : Window
         UpdateVolumeIcon();
         UpdatePlayPauseIcon();
         SetLoadVideoButtonTooltip(DefaultLoadVideoTooltip);
+        PointerMoved += OnPointerMoved;
+        PointerPressed += OnPointerPressed;
+        PointerWheelChanged += OnPointerWheelChanged;
     }
 
     private List<string> GetSuggestionMatches(CommandSuggestionContext context)
@@ -280,6 +289,20 @@ public partial class MainWindow : Window
                     break;
                 case "video-metadata":
                     HandleVideoMetadata(document.RootElement);
+                    break;
+                case "editor-dimmed":
+                    if (document.RootElement.TryGetProperty("dimmed", out var dimmedElement))
+                    {
+                        var dimmed = dimmedElement.ValueKind switch
+                        {
+                            JsonValueKind.True => true,
+                            JsonValueKind.False => false,
+                            JsonValueKind.String => bool.TryParse(dimmedElement.GetString(), out var parsed) && parsed,
+                            JsonValueKind.Number => Math.Abs(dimmedElement.GetDouble()) > double.Epsilon,
+                            _ => false
+                        };
+                        HandleEditorDimmedChange(dimmed);
+                    }
                     break;
             }
         }
@@ -1627,6 +1650,58 @@ public partial class MainWindow : Window
         {
             YouTubeIdTextBox?.SelectAll();
         }, DispatcherPriority.Input);
+    }
+
+
+    private void HandleEditorDimmedChange(bool isDimmed)
+    {
+        m_isEditorDimmed = isDimmed;
+        Dispatcher.UIThread.Post(() => SetToolbarDimmed(isDimmed));
+    }
+
+    private void SetToolbarDimmed(bool dimmed)
+    {
+        if (ToolbarGrid is null)
+        {
+            return;
+        }
+
+        if (m_isToolbarDimmed == dimmed)
+        {
+            return;
+        }
+
+        m_isToolbarDimmed = dimmed;
+        ToolbarGrid.Opacity = dimmed ? ToolbarDimmedOpacity : ToolbarActiveOpacity;
+    }
+
+    private void OnPointerMoved(object? sender, PointerEventArgs e) => RegisterPointerActivity();
+
+    private void OnPointerPressed(object? sender, PointerPressedEventArgs e) => RegisterPointerActivity();
+
+    private void OnPointerWheelChanged(object? sender, PointerWheelEventArgs e) => RegisterPointerActivity();
+
+    private void RegisterPointerActivity()
+    {
+        if (m_isToolbarDimmed)
+        {
+            SetToolbarDimmed(false);
+        }
+
+        if (!m_isEditorReady)
+        {
+            return;
+        }
+
+        var now = DateTime.UtcNow;
+
+        if (!m_isEditorDimmed && now - m_lastHostActivitySent < HostActivityThrottle)
+        {
+            return;
+        }
+
+        m_lastHostActivitySent = now;
+        SendWebViewMessage(new { type = "host-activity" });
     }
 
     private void RequestApplicationQuit()
