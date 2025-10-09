@@ -6,6 +6,7 @@
         <Nullable>enable</Nullable>
         <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
         <ApplicationManifest>app.manifest</ApplicationManifest>
+        <ApplicationIcon>Assets\app.ico</ApplicationIcon>
         <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
         <Company>Dean Edis (DeanTheCoder)</Company>
         <ApplicationTitle>CineCode</ApplicationTitle>
