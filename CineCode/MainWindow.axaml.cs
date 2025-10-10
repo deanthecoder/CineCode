@@ -264,11 +264,11 @@ public partial class MainWindow : Window
                     Dispatcher.UIThread.Post(RequestApplicationQuit);
                     break;
                 case "request-open":
-                    Dispatcher.UIThread.Post(async () =>
+                    Dispatcher.UIThread.Post(() =>
                     {
                         try
                         {
-                            await OpenFileAsync();
+                            _ = OpenFileAsync();
                         }
                         catch (Exception ex)
                         {

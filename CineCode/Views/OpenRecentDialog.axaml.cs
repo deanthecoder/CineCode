@@ -50,7 +50,7 @@ public partial class OpenRecentDialog : Window
 
     private void RecentFilesList_KeyDown(object? sender, KeyEventArgs e)
     {
-        if (e.Key is Key.Enter or Key.Return)
+        if (e.Key is Key.Enter)
         {
             e.Handled = true;
             ConfirmSelection();
@@ -79,7 +79,7 @@ public partial class OpenRecentDialog : Window
                     list.SelectedIndex = 0;
                 }
                 break;
-            case Key.Enter or Key.Return:
+            case Key.Enter:
                 e.Handled = true;
                 ConfirmSelection();
                 break;

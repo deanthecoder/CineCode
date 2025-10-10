@@ -570,6 +570,12 @@
 
         editor.setValue('// Start coding here...');
 
+        const doc = editor.getDoc();
+        const lastLine = doc.lastLine();
+        doc.setCursor(lastLine, doc.getLine(lastLine).length);
+
+        requestAnimationFrame(() => editor.focus());
+
         hostBridge.subscribe(handleHostMessage);
         hostBridge.notify({ type: 'editor-ready' });
         applyCurrentOpacity();
