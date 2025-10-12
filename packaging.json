@@ -1,0 +1,13 @@
+{
+  "ProductName": "CineCode",
+  "CompanyName": "Dean Edis (DeanTheCoder)",
+  "BundleIdentifier": "com.deanthecoder.cinecode",
+  "Project": "CineCode/CineCode.csproj",
+  "Win": {
+    "Executable": "CineCode.exe",
+    "InnoScript": "Installer/templates/inno.iss",
+    "IconIco": "CineCode/Assets/app.ico",
+    "GUID": "{696B595E-6226-46D3-B828-914F546EEB67}",
+    "PublisherUrl": "https://github.com/deanthecoder"
+  }
+}
